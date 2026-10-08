@@ -1,0 +1,2829 @@
+<!DOCTYPE html>
+<html lang="ms" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem Kehadiran Graduan Konvokesyen (Excel-Driven)</title>
+    <script>
+        // Guna tema tersimpan sebelum paparan pertama (elak kelipan tema salah)
+        try { if (localStorage.getItem('ekonvo_dark_mode') === 'false') document.documentElement.classList.remove('dark'); } catch (e) {}
+    </script>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"DM Sans"', 'ui-sans-serif', 'system-ui', 'sans-serif'],          // Teks antara muka
+                        display: ['"Space Grotesk"', '"DM Sans"', 'ui-sans-serif', 'sans-serif'], // Tajuk, nombor & label
+                        mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'Consolas', 'monospace'] // Kod: IC, tag, kerusi
+                    },
+                    colors: {
+                        'konvo-navy': '#0b1329',
+                        'konvo-card': '#111c3a',
+                        // Token sistem reka bentuk (nilai CSS variables pada :root & html.dark)
+                        surface: {
+                            0: 'rgb(var(--surface-0) / <alpha-value>)',   // Kanvas halaman
+                            1: 'rgb(var(--surface-1) / <alpha-value>)',   // Kad
+                            2: 'rgb(var(--surface-2) / <alpha-value>)',   // Panel dalam kad, kepala jadual
+                            3: 'rgb(var(--surface-3) / <alpha-value>)',   // Cip, hover, modal, toast
+                            4: 'rgb(var(--surface-4) / <alpha-value>)'    // Trek progress, keadaan aktif
+                        },
+                        field: 'rgb(var(--field) / <alpha-value>)',       // Latar medan input
+                        fg: {
+                            DEFAULT: 'rgb(var(--fg) / <alpha-value>)',                  // Tajuk & nilai utama
+                            secondary: 'rgb(var(--fg-secondary) / <alpha-value>)',      // Teks badan
+                            muted: 'rgb(var(--fg-muted) / <alpha-value>)',              // Label & teks sokongan
+                            subtle: 'rgb(var(--fg-subtle) / <alpha-value>)'             // Hiasan / placeholder sahaja
+                        },
+                        line: {
+                            subtle: 'var(--line-subtle)',
+                            DEFAULT: 'var(--line)',
+                            strong: 'var(--line-strong)'
+                        },
+                        'chart-neutral': 'rgb(var(--chart-neutral) / <alpha-value>)'
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Vue 3 CDN (Primary jsDelivr with fallback) -->
+    <script src="https://cdn.jsdelivr.net/npm/vue@3.4.21/dist/vue.global.prod.js"></script>
+    <script>
+        if (typeof Vue === 'undefined') {
+            document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.4.21/vue.global.prod.min.js"><\/script>');
+        }
+    </script>
+    <!-- Chart.js for Visual Insights -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <!-- SheetJS (xlsx) for Excel Processing -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://cdn.jsdelivr.net/npm/lucide@0.344.0/dist/umd/lucide.min.js"></script>
+    <!-- Fonts: DM Sans (teks), Space Grotesk (paparan), JetBrains Mono (kod) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link crossorigin="anonymous" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+    <style type="text/tailwindcss">
+        @layer base {
+            html {
+                -webkit-tap-highlight-color: transparent;
+            }
+            html.dark {
+                color-scheme: dark;
+            }
+            body {
+                font-optical-sizing: auto;
+            }
+        }
+
+        @layer components {
+            /* ---------- Surfaces ---------- */
+            .card {
+                @apply bg-surface-1 border border-line-subtle rounded-2xl;
+                box-shadow: var(--elevation-1);
+            }
+            .card-inset {
+                @apply bg-surface-2 border border-line-subtle rounded-xl;
+            }
+            .elevated {
+                box-shadow: var(--elevation-3);
+            }
+            /* ---------- Typography ---------- */
+            .t-display {
+                @apply font-display font-semibold text-fg tracking-[-0.03em] leading-[1.1];
+            }
+            .t-stat {
+                @apply font-display font-semibold tracking-[-0.035em] leading-none;
+                font-variant-numeric: tabular-nums;
+            }
+            .section-title {
+                @apply font-display text-[15px] font-semibold tracking-[-0.015em] text-fg flex items-center gap-2.5;
+            }
+            .section-sub {
+                @apply text-[12.5px] leading-relaxed text-fg-muted mt-1;
+            }
+            .label {
+                @apply font-display text-[10.5px] font-medium uppercase tracking-[0.12em] text-fg-muted;
+            }
+            /* ---------- Chips & pills ---------- */
+            .icon-chip {
+                @apply w-9 h-9 rounded-xl flex items-center justify-center shrink-0;
+            }
+            .icon-chip-sm {
+                @apply w-7 h-7 rounded-lg flex items-center justify-center shrink-0;
+            }
+            .pill {
+                @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold whitespace-nowrap ring-1 ring-inset;
+            }
+            .pill-neutral {
+                @apply bg-surface-3 text-fg-secondary ring-line;
+            }
+            .pill-emerald {
+                @apply bg-emerald-500/10 text-emerald-700 ring-emerald-500/20 dark:bg-emerald-400/10 dark:text-emerald-300 dark:ring-emerald-400/20;
+            }
+            .pill-rose {
+                @apply bg-rose-500/10 text-rose-700 ring-rose-500/20 dark:bg-rose-400/10 dark:text-rose-300 dark:ring-rose-400/20;
+            }
+            .pill-amber {
+                @apply bg-amber-500/10 text-amber-700 ring-amber-500/25 dark:bg-amber-400/10 dark:text-amber-300 dark:ring-amber-400/20;
+            }
+            /* ---------- Buttons ---------- */
+            .btn {
+                @apply inline-flex items-center justify-center gap-1.5 rounded-xl px-3.5 py-2 text-[13px] font-semibold tracking-[-0.005em] whitespace-nowrap select-none transition duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/70 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-1 dark:focus-visible:ring-amber-400/80 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100;
+            }
+            .btn-primary {
+                @apply bg-amber-400 text-slate-950 hover:bg-amber-300;
+                box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.35), 0 0 0 1px rgb(217 119 6 / 0.25), 0 4px 14px -4px rgb(245 158 11 / 0.45);
+            }
+            .dark .btn-primary {
+                box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.35), 0 0 0 1px rgb(251 191 36 / 0.5), 0 4px 16px -4px rgb(251 191 36 / 0.35);
+            }
+            .btn-success {
+                @apply bg-emerald-500 text-white hover:bg-emerald-400;
+                box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.2), 0 4px 14px -4px rgb(16 185 129 / 0.4);
+            }
+            .btn-secondary {
+                @apply bg-surface-1 text-fg-secondary border border-line shadow-sm hover:bg-surface-3 hover:border-line-strong hover:text-fg dark:bg-surface-2 dark:shadow-none;
+            }
+            .btn-soft-emerald {
+                @apply bg-emerald-500/10 text-emerald-700 border border-emerald-500/20 hover:bg-emerald-500/15 dark:bg-emerald-400/10 dark:text-emerald-300 dark:border-emerald-400/20 dark:hover:bg-emerald-400/15;
+            }
+            .btn-soft-rose {
+                @apply bg-rose-500/10 text-rose-700 border border-rose-500/20 hover:bg-rose-500/15 dark:bg-rose-400/10 dark:text-rose-300 dark:border-rose-400/20 dark:hover:bg-rose-400/15;
+            }
+            .btn-icon {
+                @apply p-2;
+            }
+            /* ---------- Form fields ---------- */
+            .field {
+                @apply w-full bg-field border border-line rounded-xl px-3.5 py-2 text-sm text-fg shadow-[inset_0_1px_2px_rgba(15,23,42,0.06)] placeholder:text-fg-subtle transition hover:border-line-strong focus:outline-none focus:bg-surface-1 focus:border-amber-500/70 focus:ring-4 focus:ring-amber-500/10 dark:shadow-none dark:focus:bg-field dark:focus:border-amber-400/60 dark:focus:ring-amber-400/10;
+            }
+            .field-select {
+                @apply appearance-none pr-9 cursor-pointer bg-no-repeat;
+                background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+                background-position: right 0.75rem center;
+                background-size: 14px 14px;
+            }
+            /* ---------- Navigation tabs ---------- */
+            .nav-tab {
+                @apply relative inline-flex items-center gap-2 px-1 pt-1 pb-3 text-[13.5px] font-medium whitespace-nowrap border-b-2 border-transparent text-fg-muted transition hover:text-fg hover:border-line-strong focus:outline-none focus-visible:text-fg;
+            }
+            .nav-tab-active {
+                @apply border-amber-500 text-fg hover:border-amber-500 dark:border-amber-400 dark:hover:border-amber-400;
+            }
+            .nav-tab-active .ico {
+                @apply text-amber-500 dark:text-amber-400;
+            }
+            /* ---------- Progress bars ---------- */
+            .progress {
+                @apply w-full h-1.5 rounded-full bg-surface-4 overflow-hidden;
+            }
+            .progress > span {
+                @apply block h-full rounded-full transition-all duration-700 ease-out;
+            }
+        }
+    </style>
+    <style>
+        [v-cloak] { display: none !important; }
+
+        /* ===== Design tokens =====
+           Surfaces: aras kedalaman (0 = kanvas → 4 = aktif). Lines: sempadan lutsinar 3 aras.
+           Teks: 4 aras kontras (fg / secondary / muted ≥ 4.5:1 / subtle untuk hiasan sahaja). */
+        :root {
+            /* Mod terang: 3 lapisan jelas — kanvas kelabu sejuk < kad putih > medan input berisi (recessed) */
+            --surface-0: 236 239 243;    /* #eceff3  kanvas halaman */
+            --surface-1: 255 255 255;    /* #ffffff  kad */
+            --surface-2: 246 247 249;    /* #f6f7f9  panel dalam kad, kepala jadual */
+            --surface-3: 237 239 243;    /* #edeff3  cip, hover */
+            --surface-4: 222 226 232;    /* #dee2e8  trek progress */
+            --field: 244 246 249;        /* #f4f6f9  medan input (putih bila fokus) */
+
+            --line-subtle: rgb(15 23 42 / 0.08);
+            --line: rgb(15 23 42 / 0.13);
+            --line-strong: rgb(15 23 42 / 0.22);
+
+            --fg: 12 14 20;              /* #0c0e14 */
+            --fg-secondary: 55 62 76;    /* #373e4c */
+            --fg-muted: 92 100 116;      /* #5c6474  (~5.9:1 pada putih, ~5.0:1 pada kanvas) */
+            --fg-subtle: 150 157 171;    /* #969dab */
+
+            --chart-neutral: 214 219 227;
+
+            --elevation-1: 0 1px 2px 0 rgb(15 23 42 / 0.06), 0 4px 14px -6px rgb(15 23 42 / 0.10);
+            --elevation-3: 0 0 0 1px rgb(15 23 42 / 0.04), 0 24px 64px -16px rgb(15 23 42 / 0.30);
+        }
+        html.dark {
+            --surface-0: 9 10 13;        /* #090a0d */
+            --surface-1: 16 17 21;       /* #101115 */
+            --surface-2: 22 23 28;       /* #16171c */
+            --surface-3: 30 32 38;       /* #1e2026 */
+            --surface-4: 40 42 50;       /* #282a32 */
+            --field: 9 10 13;
+
+            --line-subtle: rgb(255 255 255 / 0.06);
+            --line: rgb(255 255 255 / 0.10);
+            --line-strong: rgb(255 255 255 / 0.16);
+
+            --fg: 244 244 246;           /* #f4f4f6  (~17:1) */
+            --fg-secondary: 200 201 209; /* #c8c9d1  (~11:1) */
+            --fg-muted: 152 154 166;     /* #989aa6  (~6.7:1) */
+            --fg-subtle: 110 112 124;    /* #6e707c */
+
+            --chart-neutral: 72 74 86;   /* #484a56 */
+
+            --elevation-1: inset 0 1px 0 0 rgb(255 255 255 / 0.04), 0 1px 2px 0 rgb(0 0 0 / 0.4), 0 8px 24px -16px rgb(0 0 0 / 0.7);
+            --elevation-3: inset 0 1px 0 0 rgb(255 255 255 / 0.06), 0 0 0 1px rgb(0 0 0 / 0.4), 0 24px 64px -16px rgb(0 0 0 / 0.8);
+        }
+        html.dark select option { background-color: rgb(var(--surface-3)); color: rgb(var(--fg)); }
+
+        /* Inline SVG icons (Lucide-style strokes) */
+        .ico { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+
+        .tnum { font-variant-numeric: tabular-nums; }
+
+        /* Tab panel entrance */
+        .tab-panel { animation: panel-in .35s cubic-bezier(.2, .7, .2, 1) both; }
+        @keyframes panel-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+        /* Modal transition */
+        .modal-enter-active, .modal-leave-active { transition: opacity .2s ease; }
+        .modal-enter-active .modal-panel, .modal-leave-active .modal-panel { transition: transform .2s cubic-bezier(.2, .7, .2, 1); }
+        .modal-enter-from, .modal-leave-to { opacity: 0; }
+        .modal-enter-from .modal-panel, .modal-leave-to .modal-panel { transform: translateY(8px) scale(.97); }
+
+        /* Toast transition */
+        .toast-enter-active, .toast-leave-active { transition: opacity .25s ease, transform .25s cubic-bezier(.2, .7, .2, 1); }
+        .toast-enter-from, .toast-leave-to { opacity: 0; transform: translateY(12px); }
+
+        /* Scrollbars */
+        .scroll-thin { scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+        .scroll-thin::-webkit-scrollbar { height: 8px; width: 8px; }
+        .scroll-thin::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 999px; }
+        .no-scrollbar { scrollbar-width: none; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+        }
+    </style>
+</head>
+<body class="bg-surface-0 text-fg min-h-screen antialiased selection:bg-amber-400 selection:text-slate-950">
+    <!-- Ambient background glow -->
+    <div aria-hidden="true" class="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+        <div class="absolute -top-48 left-1/2 -translate-x-1/2 w-[1000px] h-[520px] rounded-full bg-amber-400/[0.10] dark:bg-amber-400/[0.035] blur-3xl"></div>
+        <div class="absolute top-1/3 -right-40 w-[480px] h-[480px] rounded-full bg-emerald-400/[0.06] dark:bg-emerald-400/[0.015] blur-3xl"></div>
+    </div>
+
+    <div id="app" v-cloak class="min-h-screen flex flex-col">
+        <!-- Top Navigation Bar -->
+        <header class="sticky top-0 z-40 border-b border-line bg-surface-1/80 dark:border-line-subtle dark:bg-surface-0/80 backdrop-blur-xl">
+            <div class="max-w-7xl mx-auto px-4 lg:px-8 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3">
+                <div class="h-16 flex items-center min-w-0">
+                    <!-- Brand -->
+                    <div class="flex items-center gap-3 min-w-0">
+                        <!-- Logo Kolej Vokasional (emblem KV) — jubin putih supaya warna logo kekal jelas dalam mod gelap -->
+                        <div class="w-10 h-10 shrink-0 rounded-[12px] bg-white flex items-center justify-center p-1.5 ring-1 ring-inset ring-black/[0.08] shadow-[0_6px_16px_-8px_rgba(15,23,42,0.35)] dark:ring-white/10">
+                            <img src="assets/logo-kv.png" alt="Logo Kolej Vokasional" class="w-full h-full object-contain" width="28" height="28">
+                        </div>
+
+                        <!-- Wordmark, institusi & tagline -->
+                        <div class="min-w-0">
+                            <div class="flex items-center gap-2.5">
+                                <h1 class="font-display font-semibold text-[18px] tracking-[-0.04em] leading-none text-fg"><span class="text-amber-500 dark:text-amber-400">e-</span>Konvo</h1>
+                                <span class="hidden min-[400px]:block w-px h-3.5 bg-line-strong" aria-hidden="true"></span>
+                                <span class="hidden min-[400px]:inline-flex items-center gap-1.5 font-display text-[10px] font-medium uppercase tracking-[0.16em] text-fg-muted whitespace-nowrap">
+                                    <!-- {{ sessions.length }} Sidang Dikesan -->
+                                    <span class="w-1 h-1 rounded-full bg-amber-500 dark:bg-amber-400" aria-hidden="true"></span>
+                                    Kolej Vokasional
+                                </span>
+                            </div>
+                            <p class="mt-1.5 text-[12px] leading-none text-fg-muted hidden sm:block truncate">Sistem Kehadiran Graduan &amp; Dashboard Sidang Konvokesyen</p>
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- Access Role Indicator, Theme Switcher & Live Clock (md+: tengah menegak merentas baris jenama & tab) -->
+                <div class="flex items-center gap-2 sm:gap-3 shrink-0 md:row-span-2">
+                        <div class="hidden md:flex flex-col items-end leading-tight">
+                            <span class="font-display text-[13px] font-medium tracking-[-0.01em] text-fg tnum">{{ currentTimeOnly }}</span>
+                            <span class="text-[11px] text-fg-muted">{{ currentDateString }}</span>
+                        </div>
+                        <div class="hidden md:block w-px h-8 bg-line"></div>
+
+                        <!-- Dark / Light Mode Toggle Button -->
+                        <button @click="toggleDarkMode"
+                                :title="isDarkMode ? 'Tukar ke Mod Terang (Light Mode)' : 'Tukar ke Mod Gelap (Dark Mode)'"
+                                :aria-label="isDarkMode ? 'Tukar ke Mod Terang (Light Mode)' : 'Tukar ke Mod Gelap (Dark Mode)'"
+                                class="btn btn-secondary btn-icon dark:text-amber-300">
+                            <svg v-if="isDarkMode" class="ico w-4 h-4" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+                            <svg v-else class="ico w-4 h-4" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+                        </button>
+
+                        <!-- Role Badge & Action -->
+                        <div v-if="userRole === 'public'" class="flex items-center gap-2">
+                            <span role="img" title="Mod: Paparan Awam" aria-label="Mod: Paparan Awam"
+                                  class="inline-flex items-center justify-center w-[34px] h-[34px] rounded-xl bg-surface-3 text-sky-500 dark:text-sky-400 ring-1 ring-inset ring-line">
+                                <svg class="ico w-4 h-4" viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>
+                            </span>
+                            <button @click="openAuthModal" title="Log Masuk Urusetia" aria-label="Log Masuk Urusetia" class="btn btn-primary w-[34px] h-[34px] p-0">
+                                <svg class="ico w-4 h-4" viewBox="0 0 24 24"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                            </button>
+                        </div>
+                        <div v-else class="flex items-center gap-2">
+                            <span role="img"
+                                  :title="userRole === 'admin' ? 'Akses Penuh Pentadbir' : 'Akses Urusetia'"
+                                  :aria-label="userRole === 'admin' ? 'Akses Penuh Pentadbir' : 'Akses Urusetia'"
+                                  class="inline-flex items-center justify-center w-[34px] h-[34px] rounded-xl bg-emerald-500/10 text-emerald-700 ring-1 ring-inset ring-emerald-500/20 dark:bg-emerald-400/10 dark:text-emerald-300 dark:ring-emerald-400/20">
+                                <svg class="ico w-4 h-4" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>
+                            </span>
+                            <button @click="logoutUrusetia" title="Log Keluar (Kembali ke Mod Awam)" aria-label="Log Keluar" class="btn btn-secondary text-rose-600 dark:text-rose-400 w-[34px] h-[34px] p-0">
+                                <svg class="ico w-4 h-4" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
+                            </button>
+                        </div>
+                </div>
+
+                <!-- Main Tab Navigation -->
+                <nav class="col-span-2 md:col-span-1 flex items-end justify-between gap-6 -mb-px overflow-x-auto no-scrollbar">
+                    <div class="flex items-center gap-5 sm:gap-7">
+                        <!-- Tab 1: Statistik Konvokesyen (Semua pengguna) -->
+                        <button @click="switchTab('dashboard')"
+                                :class="activeTab === 'dashboard' ? 'nav-tab-active' : ''"
+                                class="nav-tab">
+                            <svg class="ico w-4 h-4" viewBox="0 0 24 24"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
+                            <span>Dashboard Analitik</span>
+                        </button>
+
+                        <!-- Tab 2: Kaunter IC (Urusetia & Admin) -->
+                        <button v-if="userRole === 'urusetia' || userRole === 'admin'"
+                                @click="switchTab('kiosk')"
+                                :class="activeTab === 'kiosk' ? 'nav-tab-active' : ''"
+                                class="nav-tab">
+                            <svg class="ico w-4 h-4" viewBox="0 0 24 24"><path d="M16 10h2"/><path d="M16 14h2"/><path d="M6.17 15a3 3 0 0 1 5.66 0"/><circle cx="9" cy="11" r="2"/><rect x="2" y="5" width="20" height="14" rx="2"/></svg>
+                            <span>Kaunter Pendaftaran</span>
+                        </button>
+
+                        <!-- Tab 3: Senarai Graduan (Urusetia & Admin) -->
+                        <button v-if="userRole === 'urusetia' || userRole === 'admin'"
+                                @click="switchTab('graduates')"
+                                :class="activeTab === 'graduates' ? 'nav-tab-active' : ''"
+                                class="nav-tab">
+                            <svg class="ico w-4 h-4" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                            <span>Senarai Graduan (Live)</span>
+                            <span class="rounded-full px-1.5 py-0.5 text-[10px] font-display font-semibold tnum bg-surface-4 text-fg-secondary">
+                                {{ studentList.length }}
+                            </span>
+                        </button>
+
+                        <!-- Tab 4: Excel Raw (PENTADBIR UTAMA / ADMIN SAHAJA) -->
+                        <button v-if="userRole === 'admin'"
+                                @click="switchTab('excel')"
+                                :class="activeTab === 'excel' ? 'nav-tab-active' : ''"
+                                class="nav-tab">
+                            <svg class="ico w-4 h-4" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 13h2"/><path d="M14 13h2"/><path d="M8 17h2"/><path d="M14 17h2"/></svg>
+                            <span>Fail Sheet / Excel (Raw)</span>
+                        </button>
+                    </div>
+                </nav>
+            </div>
+        </header>
+
+        <!-- Main Body Content -->
+        <main class="flex-1 px-4 py-6 lg:px-8 lg:py-8 max-w-7xl mx-auto w-full">
+            <!-- TAB 1: VISUAL INSIGHT DASHBOARD -->
+            <section v-show="activeTab === 'dashboard'" class="tab-panel space-y-6">
+
+                <!-- FILTER BAR: DROPDOWN PILIHAN SIDANG (DINAMIK DARI EXCEL) -->
+                <div class="flex flex-col md:flex-row md:items-end justify-between gap-4">
+                    <div class="min-w-0">
+                        <p class="label">Dashboard Analitik</p>
+                        <h2 class="mt-2 t-display text-[26px] sm:text-[32px] flex flex-wrap items-center gap-3">
+                            <span>{{ selectedSession === 'all' ? 'Paparan Keseluruhan' : sessionLabel(selectedSession) }}</span>
+                            <span v-if="selectedSession !== 'all'" class="pill pill-amber">
+                                <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                                Aktif
+                            </span>
+                        </h2>
+                        <p class="section-sub">Statistik kehadiran graduan dikemas kini secara langsung.</p>
+                    </div>
+
+                    <!-- Dropdown Pemilihan Sidang Dinamik -->
+                    <div class="flex flex-wrap sm:flex-nowrap items-center gap-2">
+                        <select v-model="selectedSession"
+                                @change="renderCharts"
+                                aria-label="Pilih Sidang"
+                                class="field field-select flex-1 sm:flex-initial sm:w-auto sm:min-w-[300px] font-medium">
+                            <option value="all">Semua Sidang — {{ studentList.length }} Graduan</option>
+                            <option v-for="s in sessionStats" :key="s.name" :value="s.name">
+                                {{ sessionLabel(s.name) }} ({{ s.registered }}/{{ s.total }} Hadir - {{ formatPct(s.rate) }}%)
+                            </option>
+                        </select>
+
+                        <!-- Butang Reset -->
+                        <button v-if="selectedSession !== 'all'"
+                                @click="resetSessionSelection"
+                                class="btn btn-secondary py-2.5 shrink-0">
+                            <svg class="ico w-3.5 h-3.5" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                            <span>Papar Semua</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Top Metric Cards -->
+                <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                    <div class="card p-4 sm:p-5">
+                        <div class="flex items-start justify-between gap-2">
+                            <span class="label">Jumlah Graduan</span>
+                            <span class="icon-chip bg-surface-3 text-fg-secondary">
+                                <svg class="ico w-4 h-4" viewBox="0 0 24 24"><path d="M21.42 10.922a1 1 0 0 0-.019-1.838L12.83 5.18a2 2 0 0 0-1.66 0L2.6 9.08a1 1 0 0 0 0 1.832l8.57 3.908a2 2 0 0 0 1.66 0z"/><path d="M22 10v6"/><path d="M6 12.5V16a6 3 0 0 0 12 0v-3.5"/></svg>
+                            </span>
+                        </div>
+                        <div class="mt-3 t-stat text-[30px] sm:text-[36px] text-fg">{{ dashboardStats.total }}</div>
+                        <div class="mt-2 text-xs text-fg-muted truncate">
+                            {{ selectedSession === 'all' ? `Daripada ${sessions.length} Sidang` : sessionLabel(selectedSession) }}
+                        </div>
+                    </div>
+
+                    <div class="card p-4 sm:p-5">
+                        <div class="flex items-start justify-between gap-2">
+                            <span class="label">Hadir</span>
+                            <span class="icon-chip bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                                <svg class="ico w-4 h-4" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><polyline points="16 11 18 13 22 9"/></svg>
+                            </span>
+                        </div>
+                        <div class="mt-3 t-stat text-[30px] sm:text-[36px] text-emerald-600 dark:text-emerald-400">{{ dashboardStats.registered }}</div>
+                        <div class="mt-2.5 progress"><span class="bg-emerald-500" :style="{ width: dashboardStats.rate + '%' }"></span></div>
+                        <div class="mt-1.5 text-xs text-fg-muted tnum">{{ formatPct(dashboardStats.rate) }}% Hadir</div>
+                    </div>
+
+                    <div class="card p-4 sm:p-5">
+                        <div class="flex items-start justify-between gap-2">
+                            <span class="label">Tidak Hadir</span>
+                            <span class="icon-chip bg-rose-500/10 text-rose-600 dark:text-rose-400">
+                                <svg class="ico w-4 h-4" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                            </span>
+                        </div>
+                        <div class="mt-3 t-stat text-[30px] sm:text-[36px] text-rose-600 dark:text-rose-400">{{ dashboardStats.unregistered }}</div>
+                        <div class="mt-2.5 progress"><span class="bg-rose-500" :style="{ width: (dashboardStats.total > 0 ? 100 - dashboardStats.rate : 0) + '%' }"></span></div>
+                        <div class="mt-1.5 text-xs text-fg-muted tnum">
+                            {{ formatPct(dashboardStats.total > 0 ? 100 - dashboardStats.rate : 0) }}% Tidak Hadir
+                        </div>
+                    </div>
+
+                    <div class="card p-4 sm:p-5">
+                        <div class="flex items-start justify-between gap-2">
+                            <span class="label">Jumlah Sidang</span>
+                            <span class="icon-chip bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                                <svg class="ico w-4 h-4" viewBox="0 0 24 24"><line x1="3" x2="21" y1="22" y2="22"/><line x1="6" x2="6" y1="18" y2="11"/><line x1="10" x2="10" y1="18" y2="11"/><line x1="14" x2="14" y1="18" y2="11"/><line x1="18" x2="18" y1="18" y2="11"/><polygon points="12 2 20 7 4 7"/></svg>
+                            </span>
+                        </div>
+                        <div class="mt-3 t-stat text-[30px] sm:text-[36px] text-fg">{{ sessions.length }}</div>
+                        <div class="mt-2 text-xs text-fg-muted">Keseluruhan</div>
+                    </div>
+                </div>
+
+                <!-- Overview & Analytics Section (Doughnut 1/3 + Trend 2/3) -->
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+                    <!-- Peratusan Kehadiran (Doughnut Chart mengikut Sidang) -->
+                    <div class="card p-5 sm:p-6 flex flex-col">
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0">
+                                <h3 class="section-title">
+                                    <span class="icon-chip-sm bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                                        <svg class="ico w-3.5 h-3.5" viewBox="0 0 24 24"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
+                                    </span>
+                                    <span>{{ selectedSession === 'all' ? 'Peratusan Kehadiran' : `Peratusan Kehadiran: ${sessionLabel(selectedSession)}` }}</span>
+                                </h3>
+                                <p class="section-sub">
+                                    {{ selectedSession === 'all' ? 'Nisbah pendaftaran merentas semua sidang majlis' : `Pecahan kehadiran khusus untuk ${sessionLabel(selectedSession)}` }}
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="h-56 relative flex items-center justify-center my-6">
+                            <canvas id="statusDoughnutChart"></canvas>
+                            <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                                <span class="t-stat text-[38px] text-fg">{{ formatPct(dashboardStats.rate) }}<span class="text-fg-muted text-[22px] align-top ml-0.5">%</span></span>
+                                <span class="label mt-0.5">Kehadiran</span>
+                            </div>
+                        </div>
+
+                        <div class="mt-auto grid grid-cols-2 gap-3">
+                            <div class="card-inset p-3">
+                                <span class="flex items-center gap-1.5 text-[11px] text-fg-muted">
+                                    <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                                    Hadir:
+                                </span>
+                                <span class="mt-1 block font-semibold text-base tnum text-emerald-600 dark:text-emerald-400">{{ dashboardStats.registered }} <span class="text-xs font-normal text-fg-muted">Orang</span></span>
+                            </div>
+                            <div class="card-inset p-3">
+                                <span class="flex items-center gap-1.5 text-[11px] text-fg-muted">
+                                    <span class="w-2 h-2 rounded-full bg-chart-neutral"></span>
+                                    Tidak Hadir:
+                                </span>
+                                <span class="mt-1 block font-semibold text-base tnum text-rose-600 dark:text-rose-400">{{ dashboardStats.unregistered }} <span class="text-xs font-normal text-fg-muted">Orang</span></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Graf Garisan Perbandingan Kehadiran Mengikut Sidang / Hari -->
+                    <div class="card lg:col-span-2 p-5 sm:p-6 flex flex-col">
+                        <div class="flex flex-wrap items-start justify-between gap-3 mb-5">
+                            <div class="min-w-0">
+                                <h3 class="section-title">
+                                    <span class="icon-chip-sm bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                                        <svg class="ico w-3.5 h-3.5" viewBox="0 0 24 24"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+                                    </span>
+                                    Trend Kehadiran Sidang Konvokesyen
+                                </h3>
+                                <p class="section-sub">Jumlah hadir berbanding jumlah sebenar graduan bagi setiap sidang</p>
+                            </div>
+                            <!-- <span class="pill pill-rose">Live</span> -->
+                        </div>
+
+                        <!-- Canvas Tempat Line Chart Dilukis (mengisi baki ketinggian kad; pembalut absolute elak gelung saiz Chart.js) -->
+                        <div class="relative flex-1 w-full min-h-[18rem]">
+                            <div class="absolute inset-0">
+                                <canvas id="sessionTrendChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Session Breakdown Cards -->
+                <div class="card p-5 sm:p-6">
+                    <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-3 mb-5">
+                        <div class="min-w-0">
+                            <h3 class="section-title">
+                                <span class="icon-chip-sm bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                                    <svg class="ico w-3.5 h-3.5" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>
+                                </span>
+                                Ringkasan Sidang
+                            </h3>
+                            <p class="section-sub"><span class="font-display font-medium text-fg tnum">{{ sessions.length }}</span> sidang · klik kad untuk kad laporan sidang</p>
+                        </div>
+
+                        <!-- Petunjuk status (legend) -->
+                        <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-fg-muted">
+                            <span class="inline-flex items-center gap-1.5">
+                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                <span class="font-display font-medium text-fg tnum">{{ sessionStats.filter(x => x.total > 0 && x.registered === x.total).length }}</span> selesai
+                            </span>
+                            <span class="inline-flex items-center gap-1.5">
+                                <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                                <span class="font-display font-medium text-fg tnum">{{ sessionStats.filter(x => x.registered > 0 && x.registered < x.total).length }}</span> berjalan
+                            </span>
+                            <span class="inline-flex items-center gap-1.5">
+                                <span class="w-1.5 h-1.5 rounded-full ring-1 ring-inset ring-fg-subtle"></span>
+                                <span class="font-display font-medium text-fg tnum">{{ sessionStats.filter(x => x.registered === 0).length }}</span> belum bermula
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2.5">
+                        <div v-for="s in sessionStats" :key="s.name"
+                             @click="openSessionReport(s.name)"
+                             @keydown.enter="openSessionReport(s.name)"
+                             role="button"
+                             tabindex="0"
+                             :title="sessionLabel(s.name)"
+                             :aria-pressed="selectedSession === s.name"
+                             :class="selectedSession === s.name
+                                ? 'border-amber-400/70 bg-amber-50/70 dark:border-amber-400/40 dark:bg-amber-400/[0.06]'
+                                : 'border-line-subtle hover:border-line-strong hover:bg-surface-2'"
+                             class="group rounded-xl border p-4 cursor-pointer transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/70">
+
+                            <!-- Label, status & peratus -->
+                            <div class="flex items-center justify-between gap-2">
+                                <span class="inline-flex items-center gap-1.5 min-w-0">
+                                    <span :class="s.total > 0 && s.registered === s.total
+                                            ? 'bg-emerald-500'
+                                            : (s.registered > 0 ? 'bg-amber-400' : 'ring-1 ring-inset ring-fg-subtle')"
+                                          class="w-1.5 h-1.5 rounded-full shrink-0"></span>
+                                    <span class="label truncate">
+                                        <template v-if="s.name.toLowerCase().includes('pagi')">Pagi</template><template v-else-if="s.name.toLowerCase().includes('petang')">Petang</template><template v-else>Sidang</template>
+                                    </span>
+                                </span>
+                                <span class="inline-flex items-center gap-1.5 shrink-0">
+                                    <!-- Donut mini (r = 15.915 → lilitan 100, dasharray = peratus) -->
+                                    <svg class="w-4 h-4 -rotate-90" viewBox="0 0 36 36" aria-hidden="true">
+                                        <circle cx="18" cy="18" r="15.915" fill="none" stroke-width="7" class="stroke-surface-4"></circle>
+                                        <circle v-if="s.registered > 0" cx="18" cy="18" r="15.915" fill="none" stroke-width="7"
+                                                class="stroke-emerald-500 dark:stroke-emerald-400 transition-all duration-700 ease-out"
+                                                :stroke-dasharray="Math.max(s.rate, 3) + ' 100'"></circle>
+                                    </svg>
+                                    <span :class="s.registered > 0 ? 'text-fg' : 'text-fg-subtle'"
+                                          class="font-display text-[13px] font-medium tnum">{{ formatPct(s.rate) }}%</span>
+                                </span>
+                            </div>
+
+                            <!-- Nombor / nama sidang -->
+                            <div :class="selectedSession === s.name ? 'text-amber-600 dark:text-amber-400' : 'text-fg group-hover:text-amber-600 dark:group-hover:text-amber-400'"
+                                 class="mt-3 t-stat text-[30px] truncate transition-colors">
+                                {{ sessionShortName(s.name) }}
+                            </div>
+
+                            <!-- Meter kehadiran bersegmen (20 petak × 5%; petak pertama menyala sebaik ada kehadiran) -->
+                            <div class="mt-4 grid grid-cols-[repeat(20,minmax(0,1fr))] gap-[2px]"
+                                 role="progressbar" aria-valuemin="0" aria-valuemax="100" :aria-valuenow="s.rate"
+                                 :aria-label="'Kehadiran ' + sessionLabel(s.name) + ': ' + formatPct(s.rate) + '%'">
+                                <span v-for="n in 20" :key="n"
+                                      :class="n <= (s.registered > 0 ? Math.max(1, Math.round(s.rate / 5)) : 0)
+                                          ? 'bg-emerald-500 dark:bg-emerald-400'
+                                          : 'bg-surface-4'"
+                                      class="h-2 rounded-[2px] transition-colors duration-500"></span>
+                            </div>
+
+                            <!-- Angka -->
+                            <div class="mt-2.5 flex flex-wrap items-baseline justify-between gap-x-2 text-[11.5px] text-fg-muted tnum">
+                                <span><span class="font-display font-semibold text-fg">{{ s.registered }}</span> / {{ s.total }} hadir</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 2: KAUNTER PENDAFTARAN -->
+            <section v-show="activeTab === 'kiosk' && (userRole === 'urusetia' || userRole === 'admin')" class="tab-panel max-w-3xl mx-auto space-y-4">
+
+                <!-- ================= Kad Carian ================= -->
+                <div class="card relative overflow-hidden">
+                    <div class="absolute -top-28 left-1/2 -translate-x-1/2 w-[520px] h-56 bg-amber-400/[0.12] dark:bg-amber-400/[0.06] rounded-full blur-3xl pointer-events-none"></div>
+
+                    <div class="relative p-6 sm:p-8">
+                        <!-- Header -->
+                        <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                            <div class="min-w-0">
+                                <div class="inline-flex items-center gap-2 label text-emerald-700 dark:text-emerald-400">
+                                    <span class="relative flex w-2 h-2">
+                                        <span class="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60 animate-ping"></span>
+                                        <span class="relative inline-flex w-2 h-2 rounded-full bg-emerald-500"></span>
+                                    </span>
+                                    Kaunter Sedia
+                                </div>
+                                <h2 class="mt-2 t-display text-[24px] sm:text-[28px]">Carian Kad Pengenalan</h2>
+                                <p class="section-sub">Taip 12 digit No. Kad Pengenalan graduan.</p>
+                            </div>
+
+                            <!-- Kiraan pendaftaran langsung -->
+                            <div class="self-start shrink-0 rounded-xl bg-surface-2 ring-1 ring-inset ring-line-subtle px-4 py-2.5">
+                                <div class="label">Hadir</div>
+                                <div class="mt-1 font-display text-lg font-semibold tnum text-fg leading-none">
+                                    <span class="text-emerald-600 dark:text-emerald-400">{{ registeredCount }}</span><span class="text-fg-muted text-sm font-medium"> / {{ studentList.length }}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Medan input IC -->
+                        <div class="mt-6 rounded-2xl border border-line bg-field shadow-[inset_0_1px_2px_rgba(15,23,42,0.06)] transition-all duration-300 hover:border-line-strong focus-within:bg-surface-1 focus-within:border-amber-500/70 focus-within:ring-4 focus-within:ring-amber-500/10 dark:shadow-none dark:focus-within:bg-field dark:focus-within:border-amber-400/60">
+                            <div class="flex items-center gap-3 px-4 sm:px-5 pt-4 pb-2">
+                                <svg class="ico w-5 h-5 text-fg-subtle shrink-0" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+
+                                <input v-model="inputIC"
+                                       @keyup.enter="handleRecordAttendance"
+                                       type="text"
+                                       maxlength="12"
+                                       autofocus
+                                       inputmode="numeric"
+                                       autocomplete="off"
+                                       aria-label="No. Kad Pengenalan Graduan"
+                                       placeholder="Masukkan No. Kad Pengenalan Pelajar"
+                                       class="flex-1 min-w-0 bg-transparent py-1 text-xl tracking-[0.06em] sm:text-[32px] sm:tracking-[0.14em] font-display font-medium tnum text-fg placeholder:text-fg-subtle placeholder:font-sans placeholder:font-normal placeholder:tracking-normal placeholder:text-sm sm:placeholder:text-base focus:outline-none">
+
+                                <button v-if="inputIC"
+                                        @click="clearICInput"
+                                        title="Kosongkan"
+                                        aria-label="Kosongkan"
+                                        class="shrink-0 w-8 h-8 inline-flex items-center justify-center rounded-full text-fg-muted bg-surface-3 hover:text-fg hover:bg-surface-4 transition">
+                                    <svg class="ico w-4 h-4" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                                </button>
+                            </div>
+
+                            <!-- Penunjuk digit (format KP: 6 · 2 · 4) -->
+                            <div class="flex items-center gap-3 px-4 sm:px-5 pb-4">
+                                <div class="flex flex-1 items-center gap-2" aria-hidden="true">
+                                    <div class="flex flex-[6] gap-1">
+                                        <span v-for="n in 6" :key="'a' + n"
+                                              :class="n <= cleanInputIC.length ? (cleanInputIC.length === 12 ? 'bg-emerald-500' : 'bg-amber-400') : 'bg-surface-4'"
+                                              class="h-1 flex-1 rounded-full transition-colors duration-200"></span>
+                                    </div>
+                                    <div class="flex flex-[2] gap-1">
+                                        <span v-for="n in 2" :key="'b' + n"
+                                              :class="n + 6 <= cleanInputIC.length ? (cleanInputIC.length === 12 ? 'bg-emerald-500' : 'bg-amber-400') : 'bg-surface-4'"
+                                              class="h-1 flex-1 rounded-full transition-colors duration-200"></span>
+                                    </div>
+                                    <div class="flex flex-[4] gap-1">
+                                        <span v-for="n in 4" :key="'c' + n"
+                                              :class="n + 8 <= cleanInputIC.length ? (cleanInputIC.length === 12 ? 'bg-emerald-500' : 'bg-amber-400') : 'bg-surface-4'"
+                                              class="h-1 flex-1 rounded-full transition-colors duration-200"></span>
+                                    </div>
+                                </div>
+                                <span :class="cleanInputIC.length === 12 ? 'text-emerald-600 dark:text-emerald-400' : 'text-fg-muted'"
+                                      class="font-display text-[11.5px] font-medium tnum shrink-0">{{ cleanInputIC.length }}/12</span>
+                            </div>
+                        </div>
+
+                        <!-- Petunjuk papan kekunci (Enter dalam medan IC memanggil handleRecordAttendance) -->
+                        <p class="mt-3 text-xs text-fg-muted flex flex-wrap items-center gap-1.5">
+                            Tekan
+                            <kbd class="inline-flex items-center rounded-md border border-line bg-surface-2 px-1.5 py-0.5 font-display text-[10.5px] font-medium text-fg-secondary shadow-[0_1px_0_rgba(15,23,42,0.08)]">Enter ↵</kbd>
+                            untuk daftar hadir dengan pantas
+                        </p>
+
+                    </div>
+                </div>
+
+                <!-- ================= Kad Graduan Dijumpai ================= -->
+                <div v-if="matchedStudent" class="card overflow-hidden">
+                    <!-- Jalur status -->
+                    <div :class="matchedStudent.status === 'Daftar'
+                            ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                            : 'bg-amber-500/10 text-amber-800 dark:text-amber-300'"
+                         class="flex items-center justify-between gap-3 px-5 sm:px-6 py-2.5 border-b border-line-subtle text-[12.5px] font-medium">
+                        <span class="inline-flex items-center gap-2 min-w-0">
+                            <svg v-if="matchedStudent.status === 'Daftar'" class="ico w-4 h-4" viewBox="0 0 24 24" style="stroke-width: 2.5"><path d="M20 6 9 17l-5-5"/></svg>
+                            <svg v-else class="ico w-4 h-4" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                            <span v-if="matchedStudent.status === 'Daftar'" class="truncate">Telah didaftarkan pada <span class="font-mono">{{ matchedStudent.registeredTime || currentTimeString }}</span></span>
+                            <span v-else class="truncate">Rekod dijumpai · Menunggu pengesahan kehadiran</span>
+                        </span>
+                        <span class="hidden sm:inline font-display text-[10.5px] font-semibold uppercase tracking-[0.12em] shrink-0">
+                            {{ matchedStudent.status === 'Daftar' ? 'Hadir' : 'Tidak Hadir' }}
+                        </span>
+                    </div>
+
+                    <div class="p-5 sm:p-6">
+                        <!-- Profil + tiket tagging -->
+                        <div class="flex flex-col md:flex-row md:items-stretch gap-5">
+                            <div class="flex items-start gap-4 flex-1 min-w-0">
+                                <div :class="matchedStudent.status === 'Daftar'
+                                        ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+                                        : 'bg-surface-3 text-fg-secondary'"
+                                     class="w-14 h-14 rounded-2xl flex items-center justify-center font-display text-lg font-semibold uppercase shrink-0">
+                                    {{ (matchedStudent.name || '?').split(' ').filter(w => w).slice(0, 2).map(w => w.charAt(0)).join('') }}
+                                </div>
+                                <div class="min-w-0">
+                                    <div class="label">Nama Penuh Graduan</div>
+                                    <div class="mt-1.5 font-display text-[22px] sm:text-2xl font-semibold leading-tight tracking-[-0.02em] text-fg [overflow-wrap:anywhere]">{{ matchedStudent.name }}</div>
+                                    <div class="mt-2 inline-flex items-center gap-1.5 text-[12.5px] text-fg-muted">
+                                        <svg class="ico w-3.5 h-3.5" viewBox="0 0 24 24"><path d="M16 10h2"/><path d="M16 14h2"/><path d="M6.17 15a3 3 0 0 1 5.66 0"/><circle cx="9" cy="11" r="2"/><rect x="2" y="5" width="20" height="14" rx="2"/></svg>
+                                        <span class="font-mono text-fg-secondary">{{ matchedStudent.ic }}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Tiket tagging pentas -->
+                            <div class="relative shrink-0 md:w-60 rounded-2xl bg-gradient-to-br from-amber-300 to-amber-500 text-slate-950 p-4 overflow-hidden ring-1 ring-inset ring-white/30 shadow-lg shadow-amber-500/20">
+                                <div class="absolute -right-8 -top-8 w-24 h-24 rounded-full bg-white/20 pointer-events-none"></div>
+                                <div class="relative flex items-center gap-1.5 font-display text-[10.5px] font-semibold uppercase tracking-[0.14em] text-slate-950/70">
+                                    <svg class="ico w-3.5 h-3.5" viewBox="0 0 24 24"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg>
+                                    Nombor Tagging Pentas
+                                </div>
+                                <div class="relative mt-2 t-stat text-[34px] text-slate-950 [overflow-wrap:anywhere]">
+                                    {{ matchedStudent.tagging || 'TAG-' + matchedStudent.seatNumber }}
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Jubin maklumat -->
+                        <div class="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-px overflow-hidden rounded-xl bg-line-subtle ring-1 ring-line-subtle">
+                            <div class="bg-surface-1 px-4 py-3">
+                                <div class="label">Sidang Majlis</div>
+                                <div class="mt-1.5 font-display text-[15px] font-semibold leading-snug text-fg">{{ sessionLabel(matchedStudent.session) }}</div>
+                            </div>
+                            <div class="bg-surface-1 px-4 py-3">
+                                <div class="label">Anugerah</div>
+                                <div v-if="matchedStudent.award && matchedStudent.award !== '-'" class="mt-1.5 font-display text-[15px] font-semibold leading-snug flex items-start gap-1.5 text-amber-700 dark:text-amber-300">
+                                    <svg class="ico w-4 h-4 mt-0.5" viewBox="0 0 24 24"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>
+                                    <span>{{ matchedStudent.award }}</span>
+                                </div>
+                                <div v-else class="mt-1.5 font-display text-[15px] font-medium leading-snug text-fg-subtle">Tiada anugerah khas</div>
+                            </div>
+                            <div class="bg-surface-1 px-4 py-3">
+                                <div class="label">Waktu Daftar</div>
+                                <div v-if="matchedStudent.status === 'Daftar'" class="mt-1.5 font-display text-[15px] font-semibold leading-snug tnum text-emerald-600 dark:text-emerald-400">{{ matchedStudent.registeredTime || currentTimeString }}</div>
+                                <div v-else class="mt-1.5 font-display text-[15px] font-medium leading-snug text-fg-subtle">Belum direkodkan</div>
+                            </div>
+                            <div class="sm:col-span-3 bg-surface-1 px-4 py-3">
+                                <div class="label">Program Pengajian</div>
+                                <div class="mt-1.5 font-display text-[15px] font-semibold leading-snug text-fg">{{ titleCase(matchedStudent.program) }}</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tindakan -->
+                    <div class="px-5 sm:px-6 py-4 border-t border-line-subtle bg-surface-2 flex flex-col-reverse sm:flex-row sm:items-center justify-between gap-3">
+                        <p class="text-xs text-fg-muted">
+                            {{ matchedStudent.status === 'Daftar' ? 'Graduan ini telah direkodkan hadir.' : 'Sahkan identiti graduan sebelum mendaftar.' }}
+                        </p>
+                        <button v-if="matchedStudent.status !== 'Daftar'"
+                                @click="markStudentAttendance(matchedStudent, 'Daftar')"
+                                class="btn btn-success w-full sm:w-auto px-6 py-3 text-sm">
+                            <svg class="ico w-4 h-4" viewBox="0 0 24 24" style="stroke-width: 2.5"><path d="M20 6 9 17l-5-5"/></svg>
+                            <span>Sahkan Kehadiran</span>
+                        </button>
+                        <button v-else
+                                @click="markStudentAttendance(matchedStudent, 'Belum Daftar')"
+                                class="btn btn-secondary w-full sm:w-auto text-rose-600 dark:text-rose-400 hover:bg-rose-50 hover:border-rose-200 dark:hover:bg-rose-500/10 dark:hover:border-rose-500/30">
+                            <svg class="ico w-3.5 h-3.5" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                            Batal Pendaftaran
+                        </button>
+                    </div>
+                </div>
+
+                <!-- ================= Tiada Rekod ================= -->
+                <div v-else-if="cleanInputIC.length >= 11" class="card px-6 py-10 text-center">
+                    <div class="mx-auto mb-4 w-12 h-12 rounded-2xl bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center">
+                        <svg class="ico w-6 h-6" viewBox="0 0 24 24"><path d="m13.5 8.5-5 5"/><path d="m8.5 8.5 5 5"/><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                    </div>
+                    <div class="font-display text-base font-semibold text-fg">Tiada Rekod Graduan Dijumpai</div>
+                    <div class="text-[13px] text-fg-muted mt-1.5 max-w-sm mx-auto leading-relaxed">
+                        Nombor KP <span class="font-mono text-fg font-semibold">{{ cleanInputIC }}</span> tiada dalam senarai fail Excel yang dimuat naik. Sila pastikan 12 digit dimasukkan dengan tepat.
+                    </div>
+                </div>
+
+                <!-- ================= Keadaan Sedia (tiada input) ================= -->
+                <div v-else class="rounded-2xl border border-dashed border-line px-6 py-10 text-center">
+                    <div class="mx-auto mb-4 w-12 h-12 rounded-2xl bg-surface-1 ring-1 ring-line-subtle text-fg-muted flex items-center justify-center shadow-sm dark:shadow-none">
+                        <svg class="ico w-6 h-6" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 12h10"/></svg>
+                    </div>
+                    <div class="font-display text-base font-semibold text-fg">{{ inputIC ? 'Teruskan menaip…' : 'Sedia untuk imbasan' }}</div>
+                    <div class="text-[13px] text-fg-muted mt-1.5 max-w-sm mx-auto leading-relaxed">
+                        <template v-if="!inputIC">Maklumat graduan akan dipaparkan di sini sebaik No. KP lengkap dimasukkan.</template>
+                        <template v-else-if="inputIC.toUpperCase() !== inputIC.toLowerCase()">Masukkan No. Tagging yang lengkap.</template>
+                        <template v-else><span class="font-display font-semibold text-fg tnum">{{ 12 - cleanInputIC.length }}</span> digit lagi untuk melengkapkan No. KP.</template>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 3: SENARAI GRADUAN LIVE -->
+            <section v-show="activeTab === 'graduates' && (userRole === 'urusetia' || userRole === 'admin')" class="tab-panel space-y-4">
+                <div class="card p-3 sm:p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                    <div class="flex flex-col sm:flex-row sm:items-center gap-2 flex-1">
+                        <div class="relative flex-1 min-w-[220px]">
+                            <svg class="ico w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                            <input v-model="searchQuery"
+                                   type="text"
+                                   placeholder="Cari nama, IC (tanpa -) atau tagging..."
+                                   class="field pl-9 text-[13px]">
+                        </div>
+
+                        <!-- Session Filter in Graduates Tab -->
+                        <select v-model="filterSession" aria-label="Tapis Sidang" class="field field-select sm:w-auto text-[13px]">
+                            <option value="">Semua Sidang ({{ sessions.length }})</option>
+                            <option v-for="s in sessions" :key="s" :value="s">{{ sessionLabel(s) }}</option>
+                        </select>
+
+                        <select v-model="filterStatus" aria-label="Tapis Status" class="field field-select sm:w-auto text-[13px]">
+                            <option value="">Semua Status</option>
+                            <option value="Daftar">Hadir</option>
+                            <option value="Belum Daftar">Tidak Hadir</option>
+                        </select>
+                    </div>
+
+                    <!-- Tindakan pukal: PENTADBIR (admin) SAHAJA -->
+                    <div v-if="userRole === 'admin'" class="grid grid-cols-2 lg:flex items-center gap-2">
+                        <button @click="markAllStudents('Daftar')" class="btn btn-soft-emerald min-w-0 px-2.5 sm:px-3.5 text-[12px] sm:text-[13px]">
+                            <svg class="ico w-3.5 h-3.5" viewBox="0 0 24 24"><path d="M18 6 7 17l-5-5"/><path d="m22 10-7.5 7.5L13 16"/></svg>
+                            Set Semua Hadir
+                        </button>
+                        <button @click="resetAllAttendance" class="btn btn-secondary min-w-0 px-2.5 sm:px-3.5 text-[12px] sm:text-[13px]">
+                            <svg class="ico w-3.5 h-3.5" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                            Reset Tidak Hadir
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Table Container -->
+                <div class="card overflow-hidden">
+                    <div class="overflow-x-auto scroll-thin">
+                        <table class="w-full table-fixed text-left text-[12.5px]">
+                            <thead class="bg-surface-2 border-b border-line-subtle">
+                                <tr class="font-display text-[10px] uppercase tracking-[0.12em] text-fg-muted">
+                                    <th class="hidden sm:table-cell w-11 pl-4 pr-2 py-2.5 font-medium text-left">#</th>
+                                    <th class="hidden md:table-cell w-[112px] px-3 py-2.5 font-medium">Tag</th>
+                                    <th class="pl-4 sm:pl-3 pr-3 py-2.5 font-medium">Graduan</th>
+                                    <th class="hidden lg:table-cell w-[148px] px-3 py-2.5 font-medium">Sidang</th>
+                                    <th class="hidden xl:table-cell w-[26%] px-3 py-2.5 font-medium">Program</th>
+                                    <th class="hidden lg:table-cell w-[80px] px-3 py-2.5 font-medium">Masa</th>
+                                    <th class="w-[92px] sm:w-[118px] pl-2 pr-4 py-2.5 font-medium text-center">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-line-subtle">
+                                <tr v-for="(student, idx) in paginatedStudentList" :key="student.ic"
+                                    :class="student.status === 'Daftar' ? 'bg-emerald-500/[0.04] dark:bg-emerald-400/[0.04]' : 'hover:bg-surface-2'"
+                                    class="transition-colors">
+                                    <!-- # -->
+                                    <td class="hidden sm:table-cell pl-4 pr-2 py-2 text-fg-subtle font-display text-[11.5px] tnum">{{ paginatedStart + idx + 1 }}</td>
+
+                                    <!-- Tag -->
+                                    <td class="hidden md:table-cell px-3 py-2">
+                                        <span :title="student.tagging || ('TAG-' + student.seatNumber)"
+                                              class="inline-block max-w-full truncate align-middle rounded px-1.5 py-px font-mono text-[10.5px] font-medium bg-amber-500/10 text-amber-700 dark:text-amber-300 ring-1 ring-inset ring-amber-500/20">
+                                            {{ student.tagging || ('TAG-' + student.seatNumber) }}
+                                        </span>
+                                    </td>
+
+                                    <!-- Graduan (nama, KP + maklumat lajur tersembunyi pada skrin kecil) -->
+                                    <td class="pl-4 sm:pl-3 pr-3 py-2">
+                                        <div class="flex items-center gap-2.5 min-w-0">
+                                            <div :class="student.status === 'Daftar'
+                                                    ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400'
+                                                    : 'bg-surface-3 text-fg-muted'"
+                                                 class="w-7 h-7 rounded-full flex items-center justify-center font-display text-[11px] font-semibold uppercase shrink-0">
+                                                {{ (student.name || '?').charAt(0) }}
+                                            </div>
+                                            <div class="min-w-0 flex-1" :title="student.program">
+                                                <div class="font-display text-[13px] font-semibold leading-snug text-fg [overflow-wrap:anywhere]">{{ student.name }}</div>
+                                                <div class="mt-px flex items-center gap-1.5 min-w-0 text-[11px] text-fg-muted">
+                                                    <span class="font-mono shrink-0">{{ student.ic }}</span>
+                                                    <span class="lg:hidden text-fg-subtle">·</span>
+                                                    <span class="lg:hidden truncate">{{ sessionLabel(student.session) }}</span>
+                                                </div>
+                                                <div class="md:hidden mt-1">
+                                                    <span class="inline-block max-w-full truncate rounded px-1.5 py-px font-mono text-[10px] font-medium bg-amber-500/10 text-amber-700 dark:text-amber-300 ring-1 ring-inset ring-amber-500/20">
+                                                        {{ student.tagging || ('TAG-' + student.seatNumber) }}
+                                                    </span>
+                                                </div>
+                                                <div class="hidden md:block xl:hidden mt-px truncate text-[11px] text-fg-subtle">{{ titleCase(student.program) }}</div>
+                                            </div>
+                                        </div>
+                                    </td>
+
+                                    <!-- Sidang -->
+                                    <td class="hidden lg:table-cell px-3 py-2">
+                                        <button @click="openSessionReport(student.session)" title="Lihat kad laporan sidang"
+                                                class="whitespace-nowrap font-display text-[13px] font-semibold leading-snug text-fg rounded decoration-dotted underline-offset-4 hover:text-amber-600 hover:underline dark:hover:text-amber-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/70">{{ sessionLabel(student.session) }}</button>
+                                    </td>
+
+                                    <!-- Program -->
+                                    <td class="hidden xl:table-cell px-3 py-2">
+                                        <div class="line-clamp-2 font-display text-[13px] font-semibold leading-snug text-fg" :title="titleCase(student.program)">{{ titleCase(student.program) }}</div>
+                                    </td>
+
+                                    <!-- Masa daftar -->
+                                    <td class="hidden lg:table-cell px-3 py-2 font-mono text-[11px] whitespace-nowrap">
+                                        <span v-if="student.status === 'Daftar'" class="text-emerald-600 dark:text-emerald-400 font-medium">
+                                            {{ student.registeredTime || '-' }}
+                                        </span>
+                                        <span v-else class="text-fg-subtle">–</span>
+                                    </td>
+
+                                    <!-- Status -->
+                                    <td class="pl-2 pr-4 py-2 text-center">
+                                        <button @click="setSingleStatus(student, student.status === 'Daftar' ? 'Belum Daftar' : 'Daftar')"
+                                                :title="student.status === 'Daftar' ? 'Klik untuk set Tidak Hadir' : 'Klik untuk set Hadir'"
+                                                :class="student.status === 'Daftar'
+                                                    ? 'bg-emerald-500 hover:bg-emerald-600 text-white'
+                                                    : 'bg-surface-1 text-rose-600 ring-1 ring-inset ring-rose-500/25 hover:bg-rose-50 dark:bg-surface-2 dark:text-rose-400 dark:hover:bg-rose-500/10'"
+                                                class="w-full h-7 inline-flex items-center justify-center gap-1 rounded-full px-2 text-[11px] font-semibold whitespace-nowrap transition focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/70">
+                                            <template v-if="student.status === 'Daftar'">
+                                                <svg class="ico w-3 h-3" viewBox="0 0 24 24" style="stroke-width: 3"><path d="M20 6 9 17l-5-5"/></svg>
+                                                <span>Hadir</span>
+                                            </template>
+                                            <template v-else>
+                                                <span class="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0"></span>
+                                                <span class="sm:hidden">Belum</span>
+                                                <span class="hidden sm:inline">Tidak Hadir</span>
+                                            </template>
+                                        </button>
+                                        <div v-if="student.status === 'Daftar' && student.registeredTime" class="lg:hidden mt-0.5 font-mono text-[10px] text-emerald-600 dark:text-emerald-400">{{ student.registeredTime }}</div>
+                                    </td>
+                                </tr>
+
+                                <tr v-if="filteredStudentList.length === 0">
+                                    <td colspan="7" class="px-4 py-14 text-center">
+                                        <div class="mx-auto mb-3 w-11 h-11 rounded-2xl bg-surface-3 text-fg-subtle flex items-center justify-center">
+                                            <svg class="ico w-5 h-5" viewBox="0 0 24 24"><path d="m13.5 8.5-5 5"/><path d="m8.5 8.5 5 5"/><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                                        </div>
+                                        <div class="text-sm text-fg-muted">Tiada graduan sepadan dengan kriteria carian anda.</div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Pagination Footer -->
+                    <div class="px-4 py-3 bg-surface-2 border-t border-line-subtle flex flex-wrap items-center justify-between gap-3 text-xs text-fg-muted">
+                        <div class="tnum">
+                            Menunjukkan <strong class="font-semibold text-fg">{{ paginatedStart + 1 }}</strong> hingga
+                            <strong class="font-semibold text-fg">{{ Math.min(paginatedEnd, filteredStudentList.length) }}</strong> daripada
+                            <strong class="font-semibold text-fg">{{ filteredStudentList.length }}</strong> graduan
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                            <button @click="currentPage--" :disabled="currentPage === 1"
+                                    class="btn btn-secondary px-2.5 py-1.5 rounded-lg">
+                                <svg class="ico w-3.5 h-3.5" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>
+                                Sebelumnya
+                            </button>
+                            <span class="px-2 font-display tnum">Halaman {{ currentPage }} / {{ totalPages || 1 }}</span>
+                            <button @click="currentPage++" :disabled="currentPage >= totalPages"
+                                    class="btn btn-secondary px-2.5 py-1.5 rounded-lg">
+                                Seterusnya
+                                <svg class="ico w-3.5 h-3.5" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 4: FAIL SHEET / EXCEL RAW & EXPORT -->
+            <section v-show="activeTab === 'excel' && userRole === 'admin'" class="tab-panel space-y-6">
+                <div class="card p-5 sm:p-6">
+                    <div class="flex flex-col lg:flex-row lg:items-start justify-between gap-4 mb-5">
+                        <div class="flex items-start gap-3">
+                            <span class="icon-chip w-10 h-10 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 ring-1 ring-inset ring-emerald-500/20">
+                                <svg class="ico w-5 h-5" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 13h2"/><path d="M14 13h2"/><path d="M8 17h2"/><path d="M14 17h2"/></svg>
+                            </span>
+                            <div>
+                                <h2 class="font-display text-[17px] font-semibold tracking-[-0.02em] text-fg">
+                                    Muat Naik & Penyelarasan Fail Sheet / Excel
+                                </h2>
+                                <p class="section-sub">
+                                    Format disokong: <span class="font-mono text-emerald-600 dark:text-emerald-400">.xlsx, .xls, .csv</span>. Data disimpan secara kekal dalam pelayar peranti ini.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="flex flex-wrap items-center gap-2">
+                            <!-- Reset Data Button -->
+                            <button v-if="isCustomDataLoaded" @click="resetToDefaultSampleData" class="btn btn-soft-rose">
+                                <svg class="ico w-3.5 h-3.5" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+                                <span>Kosongkan & Pulih Sampel</span>
+                            </button>
+
+                            <button @click="downloadTemplate" class="btn btn-secondary">
+                                <svg class="ico w-3.5 h-3.5" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                                <span>Muat Turun Templat Excel</span>
+                            </button>
+                            <button @click="exportAttendanceExcel" class="btn btn-success">
+                                <svg class="ico w-3.5 h-3.5" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M12 18v-6"/><path d="m9 15 3 3 3-3"/></svg>
+                                <span>Eksport Laporan (.xlsx)</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Dropzone -->
+                    <div @dragover.prevent @drop.prevent="handleFileDrop"
+                         class="group relative rounded-2xl border-2 border-dashed border-line bg-surface-2 hover:border-amber-500/60 hover:bg-amber-50/50 dark:hover:border-amber-400/40 dark:hover:bg-amber-400/[0.03] p-8 sm:p-12 text-center transition cursor-pointer">
+                        <input type="file" ref="fileInput" @change="handleFileUpload" accept=".xlsx,.xls,.csv" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+                        <div class="flex flex-col items-center justify-center text-center">
+                            <div class="w-14 h-14 rounded-2xl bg-surface-3 ring-1 ring-line shadow-sm flex items-center justify-center mb-4 text-amber-500 dark:text-amber-400 transition group-hover:-translate-y-0.5 group-hover:shadow-md">
+                                <svg class="ico w-6 h-6" viewBox="0 0 24 24"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg>
+                            </div>
+                            <div class="text-sm font-semibold text-fg">Tarik & Lepaskan fail Excel anda di sini</div>
+                            <div class="text-xs text-fg-muted mt-1">atau klik untuk memilih fail daripada komputer anda</div>
+                            <div v-if="loadedFileName" class="mt-4 inline-flex items-center gap-1.5 max-w-full rounded-full px-3 py-1.5 text-xs font-mono bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 ring-1 ring-inset ring-emerald-500/20">
+                                <svg class="ico w-3.5 h-3.5" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="m9 15 2 2 4-4"/></svg>
+                                <span class="truncate">Fail Semasa: {{ loadedFileName }} ({{ studentList.length }} rekod, {{ sessions.length }} Sidang)</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Raw Dynamic Columns Preview -->
+                <div class="card p-5 sm:p-6">
+                    <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
+                        <div class="min-w-0">
+                            <h3 class="section-title">
+                                <span class="icon-chip-sm bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                                    <svg class="ico w-3.5 h-3.5" viewBox="0 0 24 24"><path d="M12 3v18"/><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/></svg>
+                                </span>
+                                Pratonton Penuh Fail Excel (Semua Column Dibaca)
+                            </h3>
+                            <p class="section-sub">Memaparkan kesemua Column yang wujud dalam fail Excel yang dimuat naik tanpa tapisan</p>
+                        </div>
+                        <span class="pill pill-neutral font-mono tnum">{{ rawExcelColumns.length }} Column Dikesan</span>
+                    </div>
+
+                    <div class="overflow-x-auto scroll-thin rounded-xl border border-line-subtle">
+                        <table class="w-full text-left text-xs">
+                            <thead class="bg-surface-2 text-fg-secondary font-mono text-[11px] border-b border-line-subtle">
+                                <tr>
+                                    <th class="px-3 py-2.5 font-medium text-center text-fg-subtle w-10">Baris</th>
+                                    <th v-for="col in rawExcelColumns" :key="col" class="px-3 py-2.5 font-medium whitespace-nowrap">
+                                        <div class="flex items-center gap-1.5">
+                                            <span>{{ col }}</span>
+                                            <span v-if="isImportantColumn(col)" class="w-1.5 h-1.5 rounded-full bg-amber-500 dark:bg-amber-400"></span>
+                                        </div>
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-line-subtle font-mono text-[11px]">
+                                <tr v-for="(row, rIdx) in rawExcelData.slice(0, 50)" :key="rIdx" class="hover:bg-surface-2 transition-colors">
+                                    <td class="px-3 py-2.5 text-center text-fg-subtle bg-surface-2 tnum">{{ rIdx + 1 }}</td>
+                                    <td v-for="col in rawExcelColumns" :key="col" class="px-3 py-2.5 whitespace-nowrap text-fg-secondary">
+                                        {{ row[col] !== undefined && row[col] !== null ? row[col] : '-' }}
+                                    </td>
+                                </tr>
+                                <tr v-if="rawExcelData.length === 0">
+                                    <td :colspan="rawExcelColumns.length + 1" class="p-8 text-center text-slate-500 font-sans text-xs">
+                                        Tiada data mentah untuk dipaparkan.
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- PIN Verification Modal for Urusetia -->
+        <transition name="modal">
+            <div v-if="showAuthModal" @click.self="closeAuthModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/50 dark:bg-black/70 backdrop-blur-sm">
+                <div class="modal-panel w-full max-w-sm rounded-2xl p-6 sm:p-7 border bg-surface-1 dark:bg-surface-2 border-line elevated" role="dialog" aria-modal="true" aria-labelledby="authModalTitle">
+                    <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-300 to-amber-500 text-slate-950 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-amber-500/25 ring-1 ring-inset ring-white/30">
+                        <!-- Inline SVG Security Lock Icon -->
+                        <svg class="ico w-5 h-5" viewBox="0 0 24 24"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                    </div>
+                    <h3 id="authModalTitle" class="text-center font-display font-semibold tracking-[-0.02em] text-fg text-lg">Pengesahan PIN Urusetia</h3>
+                    <p class="text-center text-xs text-fg-muted mt-1.5 leading-relaxed">Masukkan kod PIN keselamatan untuk mengakses kaunter IC dan senarai penuh.</p>
+                    <div class="mt-5">
+                        <input v-model="inputPin"
+                               ref="pinInputRef"
+                               @keyup.enter="verifyPin"
+                               type="password"
+                               maxlength="8"
+                               placeholder="PIN"
+                               aria-label="PIN"
+                               :class="pinError ? 'border-rose-400 focus:border-rose-400 focus:ring-rose-500/10 dark:border-rose-500/50' : ''"
+                               class="field py-3 text-center font-mono text-lg tracking-[0.5em] placeholder:tracking-normal">
+                        <div v-if="pinError" class="text-rose-500 dark:text-rose-400 text-xs text-center mt-2">{{ pinError }}</div>
+                    </div>
+
+                    <div class="mt-5 grid grid-cols-2 gap-2">
+                        <button @click="closeAuthModal" class="btn btn-secondary py-2.5">
+                            Batal
+                        </button>
+                        <button @click="verifyPin" class="btn btn-primary py-2.5">
+                            Sahkan PIN
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </transition>
+
+        <!-- Laporan Ringkas Sidang (popup apabila kad / lajur Sidang diklik) -->
+        <transition name="modal">
+            <div v-if="sessionReport" @click.self="closeSessionReport" class="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-3 sm:p-4 bg-slate-950/50 dark:bg-black/70 backdrop-blur-sm">
+                <div ref="reportPanelRef" class="modal-panel w-full max-w-lg max-h-[92vh] flex flex-col rounded-2xl border bg-surface-1 dark:bg-surface-2 border-line elevated overflow-hidden"
+                     role="dialog" aria-modal="true" aria-labelledby="sessionReportTitle">
+
+                    <!-- Kepala -->
+                    <div class="flex items-start justify-between gap-3 px-5 sm:px-6 pt-5 sm:pt-6">
+                        <div class="flex items-center gap-3 min-w-0">
+                            <span class="icon-chip w-11 h-11 bg-amber-500/10 text-amber-600 dark:text-amber-400 ring-1 ring-inset ring-amber-500/20">
+                                <svg class="ico w-5 h-5" viewBox="0 0 24 24"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg>
+                            </span>
+                            <div class="min-w-0">
+                                <div class="label">Laporan Sidang</div>
+                                <h3 id="sessionReportTitle" class="mt-0.5 font-display text-xl font-semibold tracking-[-0.02em] text-fg truncate">{{ sessionLabel(sessionReport.name) }}</h3>
+                            </div>
+                        </div>
+                        <button @click="closeSessionReport" title="Tutup" aria-label="Tutup" data-capture-hide
+                                class="w-8 h-8 -mr-1.5 rounded-lg flex items-center justify-center text-fg-muted hover:bg-surface-3 hover:text-fg transition focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/70">
+                            <svg class="ico w-4 h-4" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                        </button>
+                    </div>
+
+                    <!-- Status & sesi -->
+                    <div class="mt-3 px-5 sm:px-6 flex flex-wrap items-center gap-1.5">
+                        <span :class="sessionReport.status === 'Selesai' ? 'pill-emerald'
+                                    : (sessionReport.status === 'Langsung' ? 'bg-violet-500/10 text-violet-700 ring-violet-500/30 dark:bg-violet-400/10 dark:text-violet-300 dark:ring-violet-400/30' : 'pill-neutral')"
+                              class="pill">
+                            <!-- Titik status; "Langsung" berdenyut lembut -->
+                            <span class="relative flex w-1.5 h-1.5">
+                                <span v-if="sessionReport.status === 'Langsung'" data-capture-hide class="absolute inline-flex w-full h-full rounded-full bg-violet-400 opacity-60 animate-ping"></span>
+                                <span :class="sessionReport.status === 'Selesai' ? 'bg-emerald-500' : (sessionReport.status === 'Langsung' ? 'bg-violet-500 dark:bg-violet-400' : 'ring-1 ring-inset ring-fg-subtle')"
+                                      class="relative inline-flex w-1.5 h-1.5 rounded-full"></span>
+                            </span>
+                            {{ sessionReport.status }}
+                        </span>
+                        <span v-if="sessionReport.period" class="pill pill-neutral">{{ sessionReport.period }}</span>
+                        <span class="pill pill-neutral tnum">{{ sessionReport.programs.length }} Program</span>
+                    </div>
+
+                    <!-- Isi (boleh skrol) -->
+                    <div class="mt-5 px-5 sm:px-6 pb-5 overflow-y-auto space-y-5">
+
+                        <!-- Ringkasan kehadiran -->
+                        <div class="flex items-center gap-5">
+                            <div class="relative w-[116px] h-[116px] shrink-0">
+                                <svg class="w-full h-full -rotate-90" viewBox="0 0 36 36" aria-hidden="true">
+                                    <circle cx="18" cy="18" r="15.915" fill="none" stroke-width="3.4" class="stroke-surface-4"></circle>
+                                    <circle v-if="sessionReport.registered > 0" cx="18" cy="18" r="15.915" fill="none" stroke-width="3.4" stroke-linecap="round"
+                                            class="stroke-emerald-500 dark:stroke-emerald-400 transition-all duration-700 ease-out"
+                                            :stroke-dasharray="Math.max(sessionReport.rate, 1.5) + ' 100'"></circle>
+                                </svg>
+                                <div class="absolute inset-0 flex flex-col items-center justify-center">
+                                    <span class="t-stat text-[22px] text-fg tnum">{{ formatPct(sessionReport.rate) }}<span class="text-fg-muted text-[12px] align-top ml-px">%</span></span>
+                                    <span class="label text-[9px] mt-0.5">Kehadiran</span>
+                                </div>
+                            </div>
+
+                            <div class="flex-1 min-w-0 grid grid-cols-1 gap-2">
+                                <div class="flex items-center justify-between gap-3 rounded-xl px-3.5 py-2.5 bg-surface-2 dark:bg-surface-3/60 border border-line-subtle">
+                                    <span class="inline-flex items-center gap-2 text-xs text-fg-muted"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>Hadir</span>
+                                    <span class="font-display text-[17px] font-semibold text-emerald-600 dark:text-emerald-400 tnum">{{ sessionReport.registered }}</span>
+                                </div>
+                                <div class="flex items-center justify-between gap-3 rounded-xl px-3.5 py-2.5 bg-surface-2 dark:bg-surface-3/60 border border-line-subtle">
+                                    <span class="inline-flex items-center gap-2 text-xs text-fg-muted"><span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span>Tidak Hadir</span>
+                                    <span class="font-display text-[17px] font-semibold text-rose-600 dark:text-rose-400 tnum">{{ sessionReport.unregistered }}</span>
+                                </div>
+                                <div class="flex items-center justify-between gap-3 rounded-xl px-3.5 py-2.5 bg-surface-2 dark:bg-surface-3/60 border border-line-subtle">
+                                    <span class="inline-flex items-center gap-2 text-xs text-fg-muted"><span class="w-1.5 h-1.5 rounded-full bg-fg-subtle"></span>Jumlah Graduan</span>
+                                    <span class="font-display text-[17px] font-semibold text-fg tnum">{{ sessionReport.total }}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Ringkasan hadir / baki -->
+                        <div>
+                            <div class="flex items-baseline justify-between text-[11.5px] text-fg-muted tnum">
+                                <span><span class="font-display font-semibold text-fg">{{ sessionReport.registered }}</span> / {{ sessionReport.total }} hadir</span>
+                                <span>Baki <span class="font-display font-semibold text-fg">{{ sessionReport.unregistered }}</span> graduan</span>
+                            </div>
+                        </div>
+                       
+                        <!-- Penerima anugerah (jika ada) -->
+                        <div v-if="sessionReport.awardTotal > 0"
+                             class="flex items-center justify-between gap-3 rounded-xl px-3.5 py-3 bg-amber-500/[0.06] border border-amber-500/20 dark:bg-amber-400/[0.05] dark:border-amber-400/20">
+                            <span class="inline-flex items-center gap-2 text-[13px] font-medium text-amber-700 dark:text-amber-300">
+                                <svg class="ico w-4 h-4" viewBox="0 0 24 24"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11"/></svg>
+                                Penerima Anugerah Khas
+                            </span>
+                            <span class="text-xs text-fg-muted tnum">
+                                <span class="font-display text-[15px] font-semibold text-fg">{{ sessionReport.awardRegistered }}</span> / {{ sessionReport.awardTotal }} hadir
+                            </span>
+                        </div>
+
+                        <!-- Pecahan mengikut program -->
+                        <div v-if="sessionReport.programs.length">
+                            <div class="flex items-center justify-between gap-3 mb-2.5">
+                                <span class="label">Pecahan Program Pengajian</span>
+                                <span class="label normal-case tracking-normal text-[11px]">Hadir / Jumlah</span>
+                            </div>
+                            <ul class="rounded-xl border border-line-subtle divide-y divide-line-subtle overflow-hidden">
+                                <li v-for="p in sessionReport.programs" :key="p.name" class="px-3.5 py-2.5">
+                                    <div class="flex items-start justify-between gap-3">
+                                        <span class="font-display text-[13px] font-semibold leading-snug text-fg min-w-0">{{ titleCase(p.name) }}</span>
+                                        <span class="shrink-0 whitespace-nowrap text-[11.5px] text-fg-muted tnum">
+                                            <span class="font-display font-semibold text-fg">{{ p.registered }}</span> / {{ p.total }}
+                                            <span class="ml-1.5 inline-block w-[52px] text-right font-display font-medium" :class="p.registered > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-fg-subtle'">{{ formatPct(p.rate) }}%</span>
+                                        </span>
+                                    </div>
+                                    <div class="mt-2 h-1.5 rounded-full bg-surface-4 overflow-hidden">
+                                        <div class="h-full rounded-full bg-emerald-500 dark:bg-emerald-400 transition-all duration-700" :style="{ width: p.rate + '%' }"></div>
+                                    </div>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <!-- Tindakan (tidak dimasukkan ke dalam imej salinan) -->
+                    <div data-capture-hide class="px-5 sm:px-6 py-4 border-t border-line-subtle bg-surface-2/60 dark:bg-surface-1/40 flex flex-col sm:flex-row sm:items-center sm:justify-end gap-2">
+                        <button @click="copySessionImage" :disabled="imageCopying" class="btn bg-sky-500/10 text-sky-700 border border-sky-500/25 hover:bg-sky-500/15 dark:bg-sky-400/10 dark:text-sky-300 dark:border-sky-400/25 dark:hover:bg-sky-400/15">
+                            <svg v-if="imageCopying" class="ico w-4 h-4 animate-spin" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                            <svg v-else class="ico w-4 h-4" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                            {{ imageCopying ? 'Menyalin…' : 'Salin Imej' }}
+                        </button>
+                        <button @click="exportSessionPdf" :disabled="pdfExporting" class="btn bg-amber-500/10 text-amber-700 border border-amber-500/30 hover:bg-amber-500/15 dark:bg-amber-400/10 dark:text-amber-300 dark:border-amber-400/25 dark:hover:bg-amber-400/15">
+                            <svg v-if="pdfExporting" class="ico w-4 h-4 animate-spin" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                            <svg v-else class="ico w-4 h-4" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                            {{ pdfExporting ? 'Menjana PDF…' : 'Jana PDF' }}
+                        </button>
+                        <button @click="closeSessionReport" class="btn bg-rose-600 text-white hover:bg-rose-500 shadow-sm shadow-rose-600/25 dark:bg-rose-500 dark:hover:bg-rose-400">Tutup</button>
+                    </div>
+                </div>
+            </div>
+        </transition>
+
+        <!-- Additional Content -->
+
+
+        <!-- Toast Notification -->
+        <transition name="toast">
+            <div v-if="toast.show" class="fixed bottom-5 right-5 left-5 sm:left-auto z-50 flex justify-end pointer-events-none" role="status" aria-live="polite">
+                <div class="pointer-events-auto max-w-sm flex items-center gap-3 rounded-2xl pl-3 pr-4 py-3 bg-slate-900 text-white ring-1 ring-white/10 dark:bg-surface-3 dark:ring-line-strong elevated">
+                    <span :class="toast.type === 'success'
+                            ? 'bg-emerald-500/15 text-emerald-400'
+                            : (toast.type === 'error' ? 'bg-rose-500/15 text-rose-400' : 'bg-sky-500/15 text-sky-400')"
+                          class="w-8 h-8 rounded-full flex items-center justify-center shrink-0">
+                        <svg v-if="toast.type === 'success'" class="ico w-4 h-4" viewBox="0 0 24 24" style="stroke-width: 2.5"><path d="M20 6 9 17l-5-5"/></svg>
+                        <svg v-else-if="toast.type === 'error'" class="ico w-4 h-4" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>
+                        <svg v-else class="ico w-4 h-4" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                    </span>
+                    <span class="text-[13px] font-medium leading-snug">{{ toast.message }}</span>
+                </div>
+            </div>
+        </transition>
+
+        <!-- End of Vue App -->
+        <!-- Footer Utama Application (Centered & Well-Organized) -->
+        <footer class="mt-auto border-t border-line-subtle">
+            <div class="max-w-7xl mx-auto px-4 lg:px-8 py-6 flex flex-col items-center justify-center text-center">
+
+                <!-- Tajuk & Versi Sistem -->
+                <!-- <div class="flex items-center justify-center gap-2 text-xs font-bold tracking-wide text-fg-secondary uppercase">
+                    <svg class="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"></path>
+                    </svg>
+                    <span>Sistem Pendaftaran Konvokesyen</span>
+                    <span class="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-mono px-2 py-0.5 rounded-full border border-emerald-500/20 lowercase">v2.0</span>
+                </div> -->
+
+                <!-- Hak Cipta & Pembangun (Pusat) -->
+                <p class="text-xs text-fg-muted flex flex-wrap items-center justify-center gap-x-1.5 gap-y-1">
+                    <span>&copy; {{ new Date().getFullYear() }} </span>
+                    <span class="hidden sm:inline text-fg-subtle">•</span>
+                    <span>Direka dan dibangunkan oleh</span>
+                    <strong class="text-fg-secondary font-semibold hover:text-amber-600 dark:hover:text-amber-400 transition cursor-default">
+                        @muhdnajb
+                    </strong>
+                </p>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+        (function startVueApp() {
+            if (typeof Vue === 'undefined') {
+                setTimeout(startVueApp, 30);
+                return;
+            }
+            const { createApp, ref, computed, watch, onMounted, nextTick } = Vue;
+
+            if (window.Chart) {
+                Chart.defaults.font.family = "'DM Sans', ui-sans-serif, system-ui, sans-serif";
+            }
+
+            // Baca token reka bentuk (CSS variables pada html.dark) supaya carta sentiasa sepadan dengan UI
+            const token = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+            const rgbToken = (name, alpha = 1) => `rgb(${token(name)} / ${alpha})`;
+
+            // Palet warna carta mengikut tema (gelap / terang)
+            const chartTheme = (dark) => ({
+                text: rgbToken('--fg-muted'),
+                legend: rgbToken('--fg-secondary'),
+                grid: token('--line-subtle'),
+                surface: rgbToken('--surface-1'),
+                neutral: rgbToken('--chart-neutral'),
+                empty: rgbToken('--surface-3'),
+                reference: rgbToken('--fg-subtle'),
+                tooltip: {
+                    backgroundColor: dark ? rgbToken('--surface-3') : '#0f172a',
+                    borderColor: dark ? token('--line-strong') : 'rgba(15, 23, 42, 0.9)',
+                    borderWidth: 1,
+                    titleColor: dark ? rgbToken('--fg') : '#f8fafc',
+                    bodyColor: dark ? rgbToken('--fg-secondary') : '#cbd5e1',
+                    padding: 10,
+                    cornerRadius: 10,
+                    boxPadding: 4,
+                    usePointStyle: true,
+                    titleFont: { family: "'Space Grotesk', 'DM Sans', sans-serif", weight: '600', size: 12 },
+                    bodyFont: { size: 12 }
+                }
+            });
+
+            createApp({
+                setup() {
+                    const isDarkMode = ref(true);
+
+                    const toggleDarkMode = () => {
+                        isDarkMode.value = !isDarkMode.value;
+                        if (isDarkMode.value) {
+                            document.documentElement.classList.add('dark');
+                        } else {
+                            document.documentElement.classList.remove('dark');
+                        }
+                        try {
+                            localStorage.setItem('ekonvo_dark_mode', isDarkMode.value ? 'true' : 'false');
+                        } catch (e) {}
+                        renderCharts();
+                    };
+
+                    // Security & Role State
+                    const URUSETIA_PIN = '1234'; // Akses: Kaunter & Senarai Graduan
+                    const ADMIN_PIN = '9999';    // Akses: Semua modul termasuk Muat Naik Excel
+                    const userRole = ref('public');
+                    const adminPin = ref('1234');
+                    const showAuthModal = ref(false);
+                    const inputPin = ref('');
+                    const pinError = ref('');
+                    const pinInputRef = ref(null);
+                    const showLoginModal = ref(false);
+
+                    // Navigation & Filters
+                    const activeTab = ref('dashboard');
+                    const inputIC = ref('');
+                    const cleanInputIC = computed(() => (inputIC.value || '').replace(/\D/g, ''));
+                    const searchQuery = ref('');
+                    const filterSession = ref('');
+                    const filterStatus = ref('');
+
+                    // Dynamic Session Selector (Directly driven by 'SIDANG' column from Excel)
+                    const selectedSession = ref('all');
+
+                    // Pagination
+                    const currentPage = ref(1);
+                    const pageSize = ref(15);
+
+                    // Excel States
+                    const loadedFileName = ref('Sampel_100_Graduan_Konvokesyen.xlsx');
+                    const rawExcelColumns = ref([]);
+                    const rawExcelData = ref([]);
+                    const isCustomDataLoaded = ref(false);
+
+                    // Date & Time
+                    const currentTimeOnly = ref('');
+                    const currentDateString = ref('');
+                    const currentTimeString = ref('');
+
+                    // Notification Toast
+                    const toast = ref({ show: false, message: '', type: 'success' });
+                    const showToast = (message, type = 'success') => {
+                        toast.value = { show: true, message, type };
+                        setTimeout(() => { toast.value.show = false; }, 3200);
+                    };
+
+                    // Update Live Clocks
+                    const updateTime = () => {
+                        const now = new Date();
+                        currentTimeOnly.value = now.toLocaleTimeString('en-MY', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+                        currentDateString.value = now.toLocaleDateString('ms-MY', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' });
+                        currentTimeString.value = now.toLocaleTimeString('en-MY', { hour: '2-digit', minute: '2-digit', hour12: true });
+                    };
+                    setInterval(updateTime, 1000);
+                    updateTime();
+
+                    // PIN Pengesahan
+                    const loginPinInput = ref('');
+                    const processLogin = () => {
+                        const cleanPin = String(loginPinInput.value).trim();
+
+                        if (cleanPin === '9999') {
+                            userRole.value = 'admin';          // Ubah role jadi Admin
+                            showLoginModal.value = false;      // Tutup modal
+                            loginPinInput.value = '';          // Clear input
+                            activeTab.value = 'excel';         // Pindah ke tab Excel secara langsung
+                        } else if (cleanPin === '1234') {
+                            userRole.value = 'urusetia';      // Ubah role jadi Urusetia
+                            showLoginModal.value = false;      // Tutup modal
+                            loginPinInput.value = '';          // Clear input
+                            activeTab.value = 'kiosk';         // Pindah ke Kiosk IC
+                        } else {
+                            alert('Kod PIN tidak sah!');
+                        }
+                    };
+
+                    const logout = () => {
+                        userRole.value = 'public';
+                        activeTab.value = 'dashboard';
+                    };
+
+                    // Generate Realistic Sample Data (18 Sidang)
+                    const generate100SampleStudents = () => {
+                        const firstNames = ['Muhammad', 'Nurul', 'Ahmad', 'Siti', 'Chong', 'Tan', 'Muthu', 'Kavitha', 'Amir', 'Farah', 'Adam', 'Aisyah', 'Zul', 'Nadhirah', 'Daniel', 'Izzati', 'Hafiz', 'Dayang', 'Awang', 'Lim'];
+                        const lastNames = ['Abdullah', 'Ismail', 'Wei Jie', 'Hassan', 'Bakar', 'Ling', 'Subramaniam', 'Razak', 'Azman', 'Sulaiman', 'Guan Hock', 'Ariffin', 'Zulkifli', 'Rashid', 'Salleh', 'Pillai', 'Syahir', 'Anas'];
+                        const facultiesList = [
+                            { faculty: 'Fakulti Komputeran & Informatik', programs: ['Sarjana Muda Sains Komputer (Kepujian)', 'Sarjana Muda Kejuruteraan Perisian', 'Sarjana Muda Keselamatan Siber'] },
+                            { faculty: 'Fakulti Kejuruteraan Elektrik & Mekanikal', programs: ['Sarjana Muda Kejuruteraan Mekanikal', 'Sarjana Muda Kejuruteraan Elektrik'] },
+                            { faculty: 'Fakulti Pengurusan & Perniagaan', programs: ['Sarjana Muda Pentadbiran Perniagaan', 'Sarjana Muda Perakaunan (Kepujian)'] },
+                            { faculty: 'Fakulti Sains Kesihatan & Perubatan', programs: ['Sarjana Muda Farmasi (Kepujian)', 'Sarjana Muda Sains Bioperubatan'] },
+                            { faculty: 'Fakulti Sains Sosial & Kemanusiaan', programs: ['Sarjana Muda Komunikasi Massa', 'Sarjana Muda Psikologi'] }
+                        ];
+
+                        const awardsPool = [
+                            '-', '-', '-', '-', '-', '-', '-', '-',
+                            'Anugerah Pelajaran Diraja',
+                            'Anugerah Canselor',
+                            'Anugerah Naib Canselor',
+                            'Anugerah Emas Universiti',
+                            'Hadiah Buku Fakulti',
+                            'Graduan Terbaik Kepujian Kelas Pertama'
+                        ];
+
+                        const list = [];
+                        let idCounter = 1;
+
+                        for (let s = 1; s <= 18; s++) {
+                            const sessionType = (s % 2 === 1) ? 'Pagi' : 'Petang';
+                            const sessionName = `Sidang ${s} (${sessionType})`;
+                            const countForThisSession = (s <= 10) ? 6 : 5;
+
+                            for (let k = 1; k <= countForThisSession; k++) {
+                                const fn = firstNames[(idCounter * 3) % firstNames.length];
+                                const ln = lastNames[(idCounter * 5) % lastNames.length];
+                                const fullName = `${fn} ${ln}`;
+
+                                const birthYear = String(98 + (idCounter % 5)).padStart(2, '0');
+                                const birthMonth = String(1 + (idCounter % 12)).padStart(2, '0');
+                                const birthDay = String(10 + (idCounter % 18)).padStart(2, '0');
+                                const stateCode = String(10 + (idCounter % 5)).padStart(2, '0');
+                                const uniqueDigits = String(1000 + idCounter * 37).slice(-4);
+                                const icNumber = `${birthYear}${birthMonth}${birthDay}${stateCode}${uniqueDigits}`;
+
+                                const facObj = facultiesList[idCounter % facultiesList.length];
+                                const progName = facObj.programs[idCounter % facObj.programs.length];
+                                const awardChoice = awardsPool[idCounter % awardsPool.length];
+
+                                const isReg = false;
+                                const seatZone = String.fromCharCode(65 + (s % 3));
+                                const seatNum = `ZON-${seatZone}-${String(k).padStart(2, '0')}`;
+                                const tagCode = `TAG-S${s}-${String(k).padStart(3, '0')}`;
+
+                                list.push({
+                                    id: idCounter,
+                                    tagging: tagCode,
+                                    ic: icNumber,
+                                    name: fullName,
+                                    matrixNumber: `B032${idCounter.toString().padStart(4, '0')}`,
+                                    program: progName,
+                                    faculty: facObj.faculty,
+                                    session: sessionName,
+                                    seatNumber: seatNum,
+                                    award: awardChoice,
+                                    status: isReg ? 'Daftar' : 'Belum Daftar',
+                                    registeredTime: isReg ? `08:${String(10 + (idCounter % 40)).padStart(2, '0')} AM` : ''
+                                });
+
+                                idCounter++;
+                            }
+                        }
+
+                        return list;
+                    };
+
+                    // LocalStorage Persistence Helpers
+                    const STORAGE_KEY_STUDENTS = 'ekonvo_stored_students';
+                    const STORAGE_KEY_FILENAME = 'ekonvo_stored_filename';
+                    const STORAGE_KEY_RAW_COLS = 'ekonvo_stored_raw_cols';
+                    const STORAGE_KEY_RAW_DATA = 'ekonvo_stored_raw_data';
+                    const STORAGE_KEY_IS_CUSTOM = 'ekonvo_is_custom_loaded';
+
+                    const saveToLocalStorage = () => {
+                        try {
+                            localStorage.setItem(STORAGE_KEY_STUDENTS, JSON.stringify(studentList.value));
+                            localStorage.setItem(STORAGE_KEY_FILENAME, loadedFileName.value);
+                            localStorage.setItem(STORAGE_KEY_RAW_COLS, JSON.stringify(rawExcelColumns.value));
+                            localStorage.setItem(STORAGE_KEY_RAW_DATA, JSON.stringify(rawExcelData.value.slice(0, 300)));
+                            localStorage.setItem(STORAGE_KEY_IS_CUSTOM, isCustomDataLoaded.value ? 'true' : 'false');
+                        } catch (err) {
+                            console.warn('Gagal menyimpan ke LocalStorage (mungkin melebihi had kuota):', err);
+                        }
+                    };
+
+                    const loadFromLocalStorage = () => {
+                        try {
+                            const storedCustom = localStorage.getItem(STORAGE_KEY_IS_CUSTOM);
+                            const storedStudents = localStorage.getItem(STORAGE_KEY_STUDENTS);
+                            const storedFilename = localStorage.getItem(STORAGE_KEY_FILENAME);
+                            const storedRawCols = localStorage.getItem(STORAGE_KEY_RAW_COLS);
+                            const storedRawData = localStorage.getItem(STORAGE_KEY_RAW_DATA);
+
+                            if (storedStudents) {
+                                const parsed = JSON.parse(storedStudents);
+                                if (Array.isArray(parsed) && parsed.length > 0) {
+                                    studentList.value = parsed;
+                                    if (storedFilename) loadedFileName.value = storedFilename;
+                                    if (storedRawCols) rawExcelColumns.value = JSON.parse(storedRawCols);
+                                    if (storedRawData) rawExcelData.value = JSON.parse(storedRawData);
+                                    if (storedCustom === 'true') isCustomDataLoaded.value = true;
+                                    return true;
+                                }
+                            }
+                        } catch (err) {
+                            console.error('Ralat memuatkan LocalStorage:', err);
+                        }
+                        return false;
+                    };
+
+                    // Initialize Student List with LocalStorage priority
+                    const studentList = ref([]);
+                    const hasLoadedLocal = loadFromLocalStorage();
+                    if (!hasLoadedLocal) {
+                        studentList.value = generate100SampleStudents();
+                    }
+
+                    // Sync Raw Data Columns from Current Student List
+                    const syncRawDataFromList = () => {
+                        if (rawExcelColumns.value.length === 0) {
+                            rawExcelColumns.value = ['Nombor_Tagging', 'No_Kad_Pengenalan', 'Nama_Graduan', 'No_Matrik', 'SIDANG', 'No_Kerusi', 'Fakulti', 'Program', 'Anugerah', 'Status_Kehadiran', 'Waktu_Daftar'];
+                        }
+                        if (rawExcelData.value.length === 0 || !isCustomDataLoaded.value) {
+                            rawExcelData.value = studentList.value.map(s => ({
+                                'Nombor_Tagging': s.tagging,
+                                'No_Kad_Pengenalan': s.ic,
+                                'Nama_Graduan': s.name,
+                                'No_Matrik': s.matrixNumber,
+                                'SIDANG': s.session,
+                                'No_Kerusi': s.seatNumber,
+                                'Fakulti': s.faculty,
+                                'Program': s.program,
+                                'Anugerah': s.award,
+                                'Status_Kehadiran': s.status,
+                                'Waktu_Daftar': s.registeredTime || '-'
+                            }));
+                        }
+                        saveToLocalStorage();
+                    };
+
+                    if (!hasLoadedLocal) {
+                        syncRawDataFromList();
+                    }
+
+                    // Reset function to clear storage and revert to 100 sample data
+                    const resetToDefaultSampleData = () => {
+                        if (confirm('Adakah anda pasti ingin memadam data Excel semasa dan kembali kepada 100 data sampel lalai?')) {
+                            localStorage.removeItem(STORAGE_KEY_STUDENTS);
+                            localStorage.removeItem(STORAGE_KEY_FILENAME);
+                            localStorage.removeItem(STORAGE_KEY_RAW_COLS);
+                            localStorage.removeItem(STORAGE_KEY_RAW_DATA);
+                            localStorage.removeItem(STORAGE_KEY_IS_CUSTOM);
+                            
+                            isCustomDataLoaded.value = false;
+                            loadedFileName.value = 'Sampel_100_Graduan_Konvokesyen.xlsx';
+                            studentList.value = generate100SampleStudents();
+                            rawExcelColumns.value = [];
+                            rawExcelData.value = [];
+                            selectedSession.value = 'all';
+                            syncRawDataFromList();
+                            renderCharts();
+                            showToast('Data telah dipulihkan kepada 100 sampel lalai.');
+                        }
+                    };
+
+                    // Sessions List (Dynamically derived from studentList session field)
+                    const sessions = computed(() => {
+                        const set = new Set();
+                        studentList.value.forEach(s => { 
+                            if (s.session && String(s.session).trim()) {
+                                set.add(String(s.session).trim()); 
+                            }
+                        });
+                        return Array.from(set).sort((a, b) => {
+                            const numA = parseInt(String(a).replace(/\D/g, '')) || 0;
+                            const numB = parseInt(String(b).replace(/\D/g, '')) || 0;
+                            if (numA && numB && numA !== numB) return numA - numB;
+                            return String(a).localeCompare(String(b));
+                        });
+                    });
+
+                    // Peratus kehadiran dibundarkan kepada 2 titik perpuluhan (cth. 4.98)
+                    const calcRate = (part, total) => total > 0 ? Math.round((part / total) * 10000) / 100 : 0;
+                    // Paparan peratus sentiasa dalam format xx.xx
+                    const formatPct = (value) => (Number(value) || 0).toFixed(2);
+
+                    // Session Statistics (Count per session)
+                    const sessionStats = computed(() => {
+                        return sessions.value.map(sessionName => {
+                            const inSession = studentList.value.filter(s => String(s.session).trim() === sessionName);
+                            const total = inSession.length;
+                            const reg = inSession.filter(s => s.status === 'Daftar').length;
+                            const unreg = total - reg;
+                            const rate = calcRate(reg, total);
+                            return { name: sessionName, total, registered: reg, unregistered: unreg, rate };
+                        });
+                    });
+
+                    // Students filtered by currently selected session dropdown
+                    const dashboardFilteredStudents = computed(() => {
+                        if (selectedSession.value === 'all') {
+                            return studentList.value;
+                        }
+                        return studentList.value.filter(s => String(s.session).trim() === selectedSession.value);
+                    });
+
+                    // Dashboard statistics for chosen session
+                    const dashboardStats = computed(() => {
+                        const list = dashboardFilteredStudents.value;
+                        const total = list.length;
+                        const registered = list.filter(s => s.status === 'Daftar').length;
+                        const unregistered = total - registered;
+                        const rate = calcRate(registered, total);
+                        return { total, registered, unregistered, rate };
+                    });
+
+                    // Special Awards Stats for chosen session
+                    const specialAwardStats = computed(() => {
+                        const list = dashboardFilteredStudents.value;
+                        const awardees = list.filter(s => s.award && s.award !== '-');
+                        const total = awardees.length;
+                        const reg = awardees.filter(s => s.status === 'Daftar').length;
+                        const rate = calcRate(reg, total);
+                        return { total, registered: reg, rate };
+                    });
+
+                    const resetSessionSelection = () => {
+                        selectedSession.value = 'all';
+                        renderCharts();
+                    };
+
+                    const selectSessionCard = (sessionName) => {
+                        selectedSession.value = sessionName;
+                        renderCharts();
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                    };
+
+                    watch(selectedSession, () => {
+                        renderCharts();
+                    });
+
+                    // ---------- Kad Laporan Sidang (popup) ----------
+                    const reportSession = ref(null);
+
+                    const sessionReport = computed(() => {
+                        if (!reportSession.value) return null;
+                        const name = reportSession.value;
+                        const list = studentList.value.filter(s => String(s.session).trim() === name);
+                        const total = list.length;
+                        const registered = list.filter(s => s.status === 'Daftar').length;
+                        const lower = name.toLowerCase();
+
+                        // Pecahan mengikut program (paling ramai graduan dahulu)
+                        const programMap = new Map();
+                        list.forEach(s => {
+                            const key = String(s.program || '-').trim() || '-';
+                            const row = programMap.get(key) || { name: key, total: 0, registered: 0 };
+                            row.total++;
+                            if (s.status === 'Daftar') row.registered++;
+                            programMap.set(key, row);
+                        });
+                        const programs = [...programMap.values()]
+                            .map(p => ({ ...p, rate: calcRate(p.registered, p.total) }))
+                            .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+
+                        const awardees = list.filter(s => s.award && s.award !== '-');
+
+                        return {
+                            name,
+                            total,
+                            registered,
+                            unregistered: total - registered,
+                            rate: calcRate(registered, total),
+                            status: total > 0 && registered === total ? 'Selesai' : (registered > 0 ? 'Langsung' : 'Belum Bermula'),
+                            period: lower.includes('pagi') ? 'Sesi Pagi' : (lower.includes('petang') ? 'Sesi Petang' : ''),
+                            programs,
+                            awardTotal: awardees.length,
+                            awardRegistered: awardees.filter(s => s.status === 'Daftar').length
+                        };
+                    });
+
+                    const openSessionReport = (sessionName) => {
+                        reportSession.value = String(sessionName ?? '').trim() || null;
+                    };
+
+                    const closeSessionReport = () => {
+                        reportSession.value = null;
+                    };
+
+                    // Fungsi asal kad sidang: tapis dashboard kepada sidang ini
+                    const filterDashboardBySession = (sessionName) => {
+                        closeSessionReport();
+                        activeTab.value = 'dashboard';
+                        selectSessionCard(sessionName);
+                    };
+
+                    // ---------- Eksport Kad Laporan Sidang ke PDF ----------
+                    // jsPDF + AutoTable dimuatkan hanya apabila pengguna mula-mula mengeksport
+                    const PDF_LIBS = [
+                        'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
+                        'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js'
+                    ];
+                    const loadScript = (src) => new Promise((resolve, reject) => {
+                        const el = document.createElement('script');
+                        el.src = src;
+                        el.onload = resolve;
+                        el.onerror = () => reject(new Error('Gagal memuatkan ' + src));
+                        document.head.appendChild(el);
+                    });
+                    const ensurePdfLibs = async () => {
+                        if (!(window.jspdf && window.jspdf.jsPDF)) await loadScript(PDF_LIBS[0]);
+                        if (!window.jspdf.jsPDF.API.autoTable) await loadScript(PDF_LIBS[1]);
+                    };
+
+                    // Tipografi PDF: DM Sans (fon sama seperti antara muka), TTF statik dari Fontsource
+                    const PDF_FONT = 'DMSans';
+                    const PDF_FONT_FILES = {
+                        normal: 'https://cdn.jsdelivr.net/fontsource/fonts/dm-sans@5/latin-400-normal.ttf',
+                        medium: 'https://cdn.jsdelivr.net/fontsource/fonts/dm-sans@5/latin-500-normal.ttf',
+                        bold: 'https://cdn.jsdelivr.net/fontsource/fonts/dm-sans@5/latin-700-normal.ttf'
+                    };
+                    let pdfFontCache = null;   // { normal | medium | bold : base64 } — dimuat turun sekali sahaja
+
+                    const arrayBufferToBase64 = (buffer) => {
+                        const bytes = new Uint8Array(buffer);
+                        let binary = '';
+                        for (let i = 0; i < bytes.length; i += 0x8000) {
+                            binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+                        }
+                        return btoa(binary);
+                    };
+
+                    // Daftar DM Sans ke dalam dokumen; jika gagal dimuat turun, guna Helvetica supaya eksport tetap berjaya
+                    const registerPdfFonts = async (doc) => {
+                        try {
+                            if (!pdfFontCache) {
+                                const entries = await Promise.all(Object.entries(PDF_FONT_FILES).map(async ([style, url]) => {
+                                    const res = await fetch(url);
+                                    if (!res.ok) throw new Error('Fon ' + style + ' gagal dimuat turun');
+                                    return [style, arrayBufferToBase64(await res.arrayBuffer())];
+                                }));
+                                pdfFontCache = Object.fromEntries(entries);
+                            }
+                            Object.entries(pdfFontCache).forEach(([style, base64]) => {
+                                const file = `${PDF_FONT}-${style}.ttf`;
+                                doc.addFileToVFS(file, base64);
+                                doc.addFont(file, PDF_FONT, style);
+                            });
+                            return PDF_FONT;
+                        } catch (err) {
+                            console.warn('DM Sans tidak dapat dimuatkan, guna Helvetica:', err);
+                            return 'helvetica';
+                        }
+                    };
+
+                    const pdfExporting = ref(false);
+
+                    // ---------- Salin Kad Laporan Sidang sebagai imej (PNG) ----------
+                    // html-to-image dimuatkan hanya apabila pengguna mula-mula menyalin
+                    const HTML_TO_IMAGE_LIB = 'https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.js';
+                    const reportPanelRef = ref(null);
+                    const imageCopying = ref(false);
+                    let reportFontCSS = null;   // @font-face terbenam (DM Sans / Space Grotesk), dijana sekali sahaja
+                    let lightTokenCache = null; // Nilai token tema terang (:root) untuk imej laporan
+
+                    // Baca token warna tema terang daripada peraturan :root (bukan html.dark)
+                    const getLightTokens = () => {
+                        if (lightTokenCache) return lightTokenCache;
+                        const tokens = {};
+                        for (const sheet of document.styleSheets) {
+                            let rules;
+                            try { rules = sheet.cssRules; } catch (e) { continue; }   // stylesheet luar tanpa CORS
+                            for (const rule of rules) {
+                                if (rule.selectorText !== ':root') continue;
+                                for (const prop of rule.style) {
+                                    if (prop.startsWith('--')) tokens[prop] = rule.style.getPropertyValue(prop).trim();
+                                }
+                            }
+                        }
+                        lightTokenCache = tokens;
+                        return tokens;
+                    };
+
+                    // Imej laporan sentiasa dalam tema terang berlatar putih, tidak terikat dengan mod gelap/terang semasa:
+                    // token :root ditetapkan terus pada klon & semua kelas "dark:" dibuang daripada klon sahaja
+                    const applyLightTheme = (root) => {
+                        Object.entries(getLightTokens()).forEach(([prop, value]) => root.style.setProperty(prop, value));
+                        [root, ...root.querySelectorAll('[class]')].forEach(el => {
+                            const cls = el.getAttribute('class') || '';
+                            el.setAttribute('class', cls.split(/\s+/).filter(c => c && !c.startsWith('dark:')).join(' '));
+                        });
+                        // Kelas komponen .pill-* mempunyai varian gelap terbina (@apply dark:...) — tetapkan warna teks terang secara terus
+                        const pillText = { 'pill-amber': '#b45309', 'pill-emerald': '#047857', 'pill-rose': '#be123c' };
+                        Object.entries(pillText).forEach(([cls, color]) => {
+                            root.querySelectorAll('.' + cls).forEach(el => { el.style.color = color; });
+                        });
+                        root.style.backgroundColor = '#ffffff';
+                        root.style.colorScheme = 'light';
+                    };
+
+                    // Klon kad laporan di luar skrin: tanpa had ketinggian / skrol & tanpa butang, kemudian jana PNG
+                    const renderReportImage = async () => {
+                        if (!window.htmlToImage) await loadScript(HTML_TO_IMAGE_LIB);
+                        const panel = reportPanelRef.value;
+                        if (!panel) throw new Error('Kad laporan tidak ditemui');
+
+                        const holder = document.createElement('div');
+                        holder.style.cssText = 'position:fixed;left:-10000px;top:0;pointer-events:none;';
+                        const clone = panel.cloneNode(true);
+                        clone.classList.remove('modal-panel', 'max-h-[92vh]', 'elevated');
+                        clone.style.width = panel.offsetWidth + 'px';
+                        clone.style.maxHeight = 'none';
+                        clone.querySelectorAll('[data-capture-hide]').forEach(el => el.remove());
+                        clone.querySelectorAll('.overflow-y-auto').forEach(el => { el.style.overflow = 'visible'; });
+                        applyLightTheme(clone);
+                        holder.appendChild(clone);
+                        document.body.appendChild(holder);
+                        try {
+                            if (!reportFontCSS) {
+                                const all = await window.htmlToImage.getFontEmbedCSS(clone);
+                                // Simpan subset Latin sahaja (cukup untuk teks Bahasa Melayu) supaya imej lebih pantas dijana
+                                const latin = (all.match(/@font-face\s*{[^}]*}/g) || []).filter(rule => /unicode-range:\s*U\+0000-00FF/i.test(rule));
+                                reportFontCSS = latin.length ? latin.join('\n') : all;
+                            }
+                            return await window.htmlToImage.toBlob(clone, { pixelRatio: 2, cacheBust: true, backgroundColor: '#ffffff', fontEmbedCSS: reportFontCSS });
+                        } finally {
+                            holder.remove();
+                        }
+                    };
+
+                    // Nama fail laporan tanpa cap masa, cth. "Laporan Sidang 1" (aksara tidak sah untuk nama fail dibuang)
+                    const reportFileName = (title) => ('Laporan ' + title)
+                        .replace(/[\\/:*?"<>|]+/g, ' ')
+                        .replace(/\s+/g, ' ')
+                        .trim();
+
+                    const downloadBlob = (blob, filename) => {
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = filename;
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
+                        setTimeout(() => URL.revokeObjectURL(url), 1000);
+                    };
+
+                    const copySessionImage = async () => {
+                        const r = sessionReport.value;
+                        if (!r || imageCopying.value) return;
+                        imageCopying.value = true;
+                        const title = sessionLabel(r.name);
+                        // Promise dihantar terus kepada ClipboardItem supaya Safari mengekalkan "user gesture"
+                        const blobPromise = renderReportImage();
+                        try {
+                            if (!(navigator.clipboard && window.ClipboardItem)) throw new Error('Clipboard API tidak disokong');
+                            await navigator.clipboard.write([new ClipboardItem({ 'image/png': blobPromise })]);
+                            showToast('Kad laporan ' + title + ' disalin sebagai imej. Tampal (Ctrl+V) di mana-mana.');
+                        } catch (err) {
+                            // Pelayar tidak membenarkan salinan imej — muat turun PNG sebagai ganti
+                            try {
+                                const blob = await blobPromise;
+                                downloadBlob(blob, reportFileName(title) + '.png');
+                                showToast('Salinan ke clipboard tidak dibenarkan oleh pelayar — imej PNG dimuat turun.', 'info');
+                            } catch (renderErr) {
+                                console.error(renderErr);
+                                showToast('Gagal menjana imej laporan. Sila cuba lagi.', 'error');
+                            }
+                        } finally {
+                            imageCopying.value = false;
+                        }
+                    };
+
+                    const exportSessionPdf = async () => {
+                        const r = sessionReport.value;
+                        if (!r || pdfExporting.value) return;
+                        pdfExporting.value = true;
+                        try {
+                            await ensurePdfLibs();
+                            const { jsPDF } = window.jspdf;
+                            const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+                            const F = await registerPdfFonts(doc);
+                            // Helvetica tiada berat 'medium' — guna 'normal' sebagai ganti
+                            const setFont = (style) => doc.setFont(F, F === 'helvetica' && style === 'medium' ? 'normal' : style);
+                            const W = doc.internal.pageSize.getWidth();
+                            const H = doc.internal.pageSize.getHeight();
+                            const M = 16;
+
+                            // Palet laporan (cetakan: latar putih)
+                            const C = {
+                                ink: [15, 23, 42], muted: [100, 116, 139], line: [226, 232, 240], soft: [248, 250, 252],
+                                emerald: [5, 150, 105], rose: [225, 29, 72], amber: [245, 158, 11], amberDark: [180, 83, 9]
+                            };
+
+                            const title = sessionLabel(r.name);
+                            const now = new Date();
+                            const stamp = now.toLocaleDateString('ms-MY', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+                                + ', ' + now.toLocaleTimeString('en-MY', { hour: '2-digit', minute: '2-digit', hour12: true });
+
+                            // Kepala
+                            doc.setFillColor(...C.amber);
+                            doc.rect(0, 0, W, 3, 'F');
+                            let y = 15;
+                            setFont('bold');
+                            doc.setFontSize(8.5);
+                            doc.setTextColor(...C.amberDark);
+                            doc.setCharSpace(0.3);
+                            doc.text('e-KONVO  ·  LAPORAN KEHADIRAN SIDANG', M, y);
+                            doc.setCharSpace(0);
+                            setFont('normal');
+                            doc.setTextColor(...C.muted);
+                            doc.text('Dijana: ' + stamp, W - M, y, { align: 'right' });
+
+                            y += 11;
+                            setFont('bold');
+                            doc.setFontSize(22);
+                            doc.setTextColor(...C.ink);
+                            doc.text(title, M, y);
+
+                            y += 7;
+                            setFont('normal');
+                            doc.setFontSize(10);
+                            doc.setTextColor(...C.muted);
+                            doc.text(['Status: ' + r.status, r.period, r.programs.length + ' Program Pengajian'].filter(Boolean).join('   ·   '), M, y);
+
+                            // Kad statistik
+                            y += 8;
+                            const gap = 4, boxW = (W - 2 * M - 3 * gap) / 4, boxH = 22;
+                            [
+                                ['KEHADIRAN', formatPct(r.rate) + '%', C.ink],
+                                ['HADIR', String(r.registered), C.emerald],
+                                ['TIDAK HADIR', String(r.unregistered), C.rose],
+                                ['JUMLAH GRADUAN', String(r.total), C.ink]
+                            ].forEach(([label, value, color], i) => {
+                                const x = M + i * (boxW + gap);
+                                doc.setDrawColor(...C.line);
+                                doc.setFillColor(...C.soft);
+                                doc.roundedRect(x, y, boxW, boxH, 2.5, 2.5, 'FD');
+                                setFont('medium');
+                                doc.setFontSize(7.5);
+                                doc.setTextColor(...C.muted);
+                                doc.setCharSpace(0.3);
+                                doc.text(label, x + 4, y + 7);
+                                doc.setCharSpace(0);
+                                setFont('bold');
+                                doc.setFontSize(17);
+                                doc.setTextColor(...color);
+                                doc.text(value, x + 4, y + 17);
+                            });
+
+                            // Bar kehadiran
+                            y += boxH + 7;
+                            const barW = W - 2 * M;
+                            doc.setFillColor(...C.line);
+                            doc.roundedRect(M, y, barW, 3, 1.5, 1.5, 'F');
+                            if (r.registered > 0) {
+                                doc.setFillColor(...C.emerald);
+                                doc.roundedRect(M, y, Math.max(barW * r.rate / 100, 3), 3, 1.5, 1.5, 'F');
+                            }
+                            y += 7.5;
+                            setFont('normal');
+                            doc.setFontSize(9);
+                            doc.setTextColor(...C.muted);
+                            doc.text(`${r.registered} / ${r.total} hadir`, M, y);
+                            doc.text(`Baki ${r.unregistered} graduan`, W - M, y, { align: 'right' });
+
+                            // Penerima anugerah
+                            y += 7;
+                            if (r.awardTotal > 0) {
+                                doc.setDrawColor(253, 230, 138);
+                                doc.setFillColor(255, 251, 235);
+                                doc.roundedRect(M, y, barW, 11, 2, 2, 'FD');
+                                setFont('bold');
+                                doc.setFontSize(9.5);
+                                doc.setTextColor(...C.amberDark);
+                                doc.text('Penerima Anugerah Khas', M + 4, y + 7);
+                                doc.setTextColor(...C.ink);
+                                doc.text(`${r.awardRegistered} / ${r.awardTotal} hadir`, W - M - 4, y + 7, { align: 'right' });
+                                y += 18;
+                            } else {
+                                y += 4;
+                            }
+
+                            const tableBase = {
+                                margin: { left: M, right: M, top: 16, bottom: 18 },
+                                theme: 'striped',
+                                styles: { font: F, fontSize: 9, textColor: C.ink, cellPadding: { top: 2.4, bottom: 2.4, left: 3, right: 3 }, lineColor: C.line },
+                                headStyles: { fillColor: [241, 245, 249], textColor: C.muted, fontStyle: 'bold', fontSize: 8 },
+                                bodyStyles: { fillColor: [255, 255, 255] },
+                                alternateRowStyles: { fillColor: C.soft }
+                            };
+                            const sectionTitle = (text, atY) => {
+                                setFont('bold');
+                                doc.setFontSize(11);
+                                doc.setTextColor(...C.ink);
+                                doc.text(text, M, atY);
+                            };
+
+                            // Pecahan program
+                            sectionTitle('Pecahan Program Pengajian', y);
+                            doc.autoTable({
+                                ...tableBase,
+                                startY: y + 3,
+                                head: [['Bil', 'Program Pengajian', 'Hadir', 'Jumlah', 'Peratus']],
+                                body: r.programs.map((p, i) => [i + 1, titleCase(p.name), p.registered, p.total, formatPct(p.rate) + '%']),
+                                columnStyles: {
+                                    0: { cellWidth: 12, halign: 'center', textColor: C.muted },
+                                    2: { cellWidth: 18, halign: 'right' },
+                                    3: { cellWidth: 18, halign: 'right' },
+                                    4: { cellWidth: 22, halign: 'right', fontStyle: 'bold' }
+                                },
+                                didParseCell: (d) => {
+                                    if (d.section === 'head' && d.column.index >= 2) d.cell.styles.halign = 'right';
+                                    if (d.section === 'head' && d.column.index === 0) d.cell.styles.halign = 'center';
+                                }
+                            });
+
+                            // Kaki halaman
+                            const pages = doc.getNumberOfPages();
+                            for (let i = 1; i <= pages; i++) {
+                                doc.setPage(i);
+                                doc.setDrawColor(...C.line);
+                                doc.line(M, H - 12, W - M, H - 12);
+                                setFont('normal');
+                                doc.setFontSize(8);
+                                doc.setTextColor(...C.muted);
+                                doc.text('e-Konvo  ·  Laporan Kehadiran ' + title, M, H - 7);
+                                doc.text(`Halaman ${i} / ${pages}`, W - M, H - 7, { align: 'right' });
+                            }
+
+                            doc.save(reportFileName(title) + '.pdf');
+                            showToast('Laporan PDF ' + title + ' berjaya dimuat turun.');
+                        } catch (err) {
+                            console.error(err);
+                            showToast('Gagal menjana PDF. Sila semak sambungan internet dan cuba lagi.', 'error');
+                        } finally {
+                            pdfExporting.value = false;
+                        }
+                    };
+
+                    // Overall Summary
+                    const registeredCount = computed(() => studentList.value.filter(s => s.status === 'Daftar').length);
+                    const unregisteredCount = computed(() => studentList.value.length - registeredCount.value);
+
+                    // Helper to clean and normalize IC
+                    const normalizeIC = (val) => {
+                        if (!val) return '';
+                        let digits = String(val).replace(/\D/g, '');
+                        if (digits.length === 11) {
+                            digits = '0' + digits;
+                        }
+                        return digits;
+                    };
+
+                    const clearICInput = () => {
+                        inputIC.value = '';
+                    };
+
+                    const selectDemoStudent = (icNo) => {
+                        inputIC.value = icNo;
+                    };
+
+                    // Normalisasi kod (tagging / matrik): huruf kecil, buang ruang, sengkang & simbol
+                    const normalizeCode = (val) => String(val || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+                    // Padanan graduan — PADANAN TEPAT SAHAJA (elak graduan salah dipapar / didaftarkan).
+                    // 1) Input digit sahaja  → padan No. KP apabila lengkap 12 digit
+                    //    (atau 11 digit jika sifar di hadapan hilang dalam Excel).
+                    // 2) Input mengandungi huruf → padan No. Tagging / No. Matrik yang SAMA sepenuhnya.
+                    // Tiada padanan separa (includes / endsWith / buang huruf) kerana ia memadankan orang yang salah.
+                    const matchedStudent = computed(() => {
+                        const raw = (inputIC.value || '').trim();
+                        if (!raw) return null;
+
+                        const compact = raw.replace(/[\s-]/g, '');
+                        const isDigitsOnly = /^\d+$/.test(compact);
+
+                        if (isDigitsOnly) {
+                            if (compact.length !== 12 && compact.length !== 11) return null;
+                            const target = normalizeIC(compact);
+                            return studentList.value.find(s => normalizeIC(s.ic) === target) || null;
+                        }
+
+                        const code = normalizeCode(raw);
+                        if (code.length < 3) return null;
+                        return studentList.value.find(s =>
+                            (s.tagging && normalizeCode(s.tagging) === code) ||
+                            (s.matrixNumber && s.matrixNumber !== '-' && normalizeCode(s.matrixNumber) === code)
+                        ) || null;
+                    });
+
+                    // Mark Student Attendance
+                    const markStudentAttendance = (student, targetStatus) => {
+                        if (!student) return;
+                        student.status = targetStatus;
+                        if (targetStatus === 'Daftar') {
+                            student.registeredTime = currentTimeString.value || '08:45 AM';
+                            showToast(`Pendaftaran Berjaya: ${student.name} [${student.tagging}]`, 'success');
+                        } else {
+                            student.registeredTime = '';
+                            showToast(`Status ditukar kepada Tidak Hadir: ${student.name}`, 'info');
+                        }
+                        saveToLocalStorage();
+                        renderCharts();
+                    };
+
+                    const setSingleStatus = (student, targetStatus) => {
+                        markStudentAttendance(student, targetStatus);
+                    };
+
+                    const handleRecordAttendance = () => {
+                        if (matchedStudent.value) {
+                            markStudentAttendance(matchedStudent.value, 'Daftar');
+                        }
+                    };
+
+                    // Tindakan pukal dihadkan kepada Pentadbir sahaja (Urusetia tidak dibenarkan)
+                    const requireAdmin = () => {
+                        if (userRole.value === 'admin') return true;
+                        showToast('Akses Ditolak! Fungsi ini khusus untuk Pentadbir Utama (Admin).', 'error');
+                        return false;
+                    };
+
+                    const markAllStudents = (status) => {
+                        if (!requireAdmin()) return;
+                        studentList.value.forEach(s => {
+                            s.status = status;
+                            if (status === 'Daftar' && !s.registeredTime) {
+                                s.registeredTime = currentTimeString.value || '08:45 AM';
+                            }
+                        });
+                        saveToLocalStorage();
+                        renderCharts();
+                        showToast(`Semua ${studentList.value.length} graduan telah ditandakan ${status === 'Daftar' ? 'Hadir' : 'Tidak Hadir'}`);
+                    };
+
+                    const resetAllAttendance = () => {
+                        if (!requireAdmin()) return;
+                        studentList.value.forEach(s => {
+                            s.status = 'Belum Daftar';
+                            s.registeredTime = '';
+                        });
+                        saveToLocalStorage();
+                        renderCharts();
+                        showToast(`Semua rekod telah di-reset kepada Tidak Hadir.`);
+                    };
+
+                    // Live Filtered Student List
+                    const filteredStudentList = computed(() => {
+                        return studentList.value.filter(s => {
+                            const q = searchQuery.value.trim().toLowerCase();
+                            const matchQuery = !q ||
+                                s.name.toLowerCase().includes(q) ||
+                                s.ic.includes(q) ||
+                                (s.tagging && s.tagging.toLowerCase().includes(q)) ||
+                                (s.seatNumber && s.seatNumber.toLowerCase().includes(q));
+
+                            const matchSession = !filterSession.value || s.session === filterSession.value;
+                            const matchStatus = !filterStatus.value || s.status === filterStatus.value;
+
+                            return matchQuery && matchSession && matchStatus;
+                        });
+                    });
+
+                    // Pagination
+                    const totalPages = computed(() => Math.ceil(filteredStudentList.value.length / pageSize.value));
+                    const paginatedStart = computed(() => (currentPage.value - 1) * pageSize.value);
+                    const paginatedEnd = computed(() => paginatedStart.value + pageSize.value);
+                    const paginatedStudentList = computed(() => {
+                        return filteredStudentList.value.slice(paginatedStart.value, paginatedEnd.value);
+                    });
+
+                    let sessionChartInstance = null;
+
+                    const renderSessionTrendChart = () => {
+                        const ctx = document.getElementById('sessionTrendChart');
+                        if (!ctx) return;
+
+                        if (sessionChartInstance) {
+                            sessionChartInstance.destroy();
+                        }
+
+                        // 1. Kumpul Data (Jumlah Berdaftar vs Jumlah Keseluruhan Mengikut Sidang)
+                        const sessionDataMap = {};
+
+                        // Inisialisasi mengikut senarai sidang sedia ada
+                        sessions.value.forEach(s => {
+                            sessionDataMap[s] = { total: 0, registered: 0 };
+                        });
+
+                        studentList.value.forEach(student => {
+                            const sessionName = student.session || student.sidang || 'Sidang 1';
+                            if (!sessionDataMap[sessionName]) {
+                                sessionDataMap[sessionName] = { total: 0, registered: 0 };
+                            }
+                            
+                            sessionDataMap[sessionName].total++;
+                            if (student.status === 'Daftar') {
+                                sessionDataMap[sessionName].registered++;
+                            }
+                        });
+
+                        const labels = Object.keys(sessionDataMap);
+                        const registeredData = labels.map(l => sessionDataMap[l].registered);
+                        const totalData = labels.map(l => sessionDataMap[l].total);
+
+                        // 2. Cipta Graf Garisan Chart.js dengan 2 Garisan (Hadir vs Keseluruhan)
+                        const theme = chartTheme(isDarkMode.value);
+                        const totalLineColor = theme.reference;
+
+                        sessionChartInstance = new Chart(ctx, {
+                            type: 'line',
+                            data: {
+                                labels: labels,
+                                datasets: [
+                                    {
+                                        label: 'Jumlah Hadir',
+                                        data: registeredData,
+                                        borderColor: '#10b981',             // Hijau
+                                        backgroundColor: (context) => {
+                                            const { ctx: c, chartArea } = context.chart;
+                                            if (!chartArea) return 'rgba(16, 185, 129, 0.1)';
+                                            const gradient = c.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+                                            gradient.addColorStop(0, 'rgba(16, 185, 129, 0.28)');
+                                            gradient.addColorStop(1, 'rgba(16, 185, 129, 0)');
+                                            return gradient;
+                                        },
+                                        borderWidth: 2.5,
+                                        tension: 0.35,
+                                        fill: true,
+                                        pointBackgroundColor: '#10b981',
+                                        pointBorderColor: theme.surface,
+                                        pointBorderWidth: 2,
+                                        pointRadius: 4,
+                                        pointHoverRadius: 6
+                                    },
+                                    {
+                                        label: 'Jumlah Sebenar Graduan',
+                                        data: totalData,
+                                        borderColor: totalLineColor,        // Kelabu/Slate
+                                        borderDash: [5, 5],                 // Garisan Putus-putus
+                                        borderWidth: 1.5,
+                                        tension: 0.35,
+                                        fill: false,
+                                        pointBackgroundColor: totalLineColor,
+                                        pointRadius: 0,
+                                        pointHoverRadius: 4
+                                    }
+                                ]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                interaction: { mode: 'index', intersect: false },
+                                plugins: {
+                                    legend: {
+                                        display: true,
+                                        position: 'top',
+                                        labels: {
+                                            color: theme.legend,
+                                            font: { size: 11, weight: '500' },
+                                            usePointStyle: true,
+                                            pointStyle: 'circle',
+                                            boxWidth: 6,
+                                            boxHeight: 6,
+                                            padding: 16
+                                        }
+                                    },
+                                    tooltip: {
+                                        ...theme.tooltip,
+                                        mode: 'index',
+                                        intersect: false
+                                    }
+                                },
+                                scales: {
+                                    x: {
+                                        grid: { display: false },
+                                        border: { display: false },
+                                        ticks: { color: theme.text, font: { size: 11 }, maxRotation: 0, autoSkipPadding: 16 }
+                                    },
+                                    y: {
+                                        beginAtZero: true,
+                                        border: { display: false },
+                                        ticks: { precision: 0, maxTicksLimit: 6, color: theme.text, font: { size: 10 }, padding: 8 },
+                                        grid: { color: theme.grid }
+                                    }
+                                }
+                            }
+                        });
+                    };
+
+                    // Chart Instances
+                    let statusDoughnutChartInstance = null;
+
+                    const renderCharts = () => {
+                        nextTick(() => {
+                            renderSessionTrendChart();
+                            const ctxStatus = document.getElementById('statusDoughnutChart');
+                            if (ctxStatus) {
+                                if (statusDoughnutChartInstance) statusDoughnutChartInstance.destroy();
+                                const stats = dashboardStats.value;
+                                const hasData = stats.total > 0;
+                                const theme = chartTheme(isDarkMode.value);
+                                const emptyBg = theme.empty;
+                                const unregBg = theme.neutral;
+
+                                statusDoughnutChartInstance = new Chart(ctxStatus, {
+                                    type: 'doughnut',
+                                    data: {
+                                        labels: ['Hadir', 'Tidak Hadir'],
+                                        datasets: [{
+                                            data: hasData ? [stats.registered, stats.unregistered] : [0, 1],
+                                            backgroundColor: hasData ? ['#10b981', unregBg] : [unregBg, emptyBg],
+                                            borderWidth: 0,
+                                            // Bucu bulat hanya bila kedua-dua segmen wujud (elak takuk pada segmen kosong)
+                                            borderRadius: hasData && stats.registered > 0 && stats.unregistered > 0 ? 6 : 0,
+                                            hoverOffset: 4
+                                        }]
+                                    },
+                                    options: {
+                                        responsive: true,
+                                        maintainAspectRatio: false,
+                                        plugins: {
+                                            // Legenda dipaparkan melalui kad ringkasan di bawah carta
+                                            legend: { display: false },
+                                            tooltip: { ...theme.tooltip }
+                                        },
+                                        cutout: '78%'
+                                    }
+                                });
+                            }
+                        });
+                    };
+
+                    // Excel File Processing
+                    const processExcelFile = (file) => {
+                        if (!file) return;
+                        loadedFileName.value = file.name;
+                        const reader = new FileReader();
+                        reader.onload = (e) => {
+                            try {
+                                const data = new Uint8Array(e.target.result);
+                                const workbook = XLSX.read(data, { type: 'array', cellDates: true, cellText: false });
+                                const firstSheetName = workbook.SheetNames[0];
+                                const worksheet = workbook.Sheets[firstSheetName];
+                                const json = XLSX.utils.sheet_to_json(worksheet, { defval: '', raw: false });
+
+                                if (!json || json.length === 0) {
+                                    showToast('Fail Excel kosong atau tidak dapat dibaca.', 'error');
+                                    return;
+                                }
+
+                                const colSet = new Set();
+                                json.forEach(row => {
+                                    Object.keys(row).forEach(k => colSet.add(k));
+                                });
+                                rawExcelColumns.value = Array.from(colSet);
+                                rawExcelData.value = json;
+
+                                const findVal = (row, keys) => {
+                                    for (let k of keys) {
+                                        const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+                                        for (let rk of Object.keys(row)) {
+                                            const cleanRk = rk.toLowerCase().replace(/[^a-z0-9]/g, '');
+                                            if (cleanRk === cleanK || cleanRk.includes(cleanK) || cleanK.includes(cleanRk)) {
+                                                return String(row[rk]).trim();
+                                            }
+                                        }
+                                    }
+                                    return '';
+                                };
+
+                                const mapped = json.map((row, idx) => {
+                                    const rawIc = findVal(row, [
+                                        'kadpengenalan', 'nokp', 'nric', 'icno', 'noic', 'mykad', 
+                                        'pengenalan', 'k/p', 'no.kp', 'no_kp', 'ic', 'id'
+                                    ]) || '';
+                                    
+                                    let icClean = rawIc.replace(/\D/g, '');
+                                    if (rawIc.toLowerCase().includes('e+') || rawIc.includes('.')) {
+                                        const parsedFloat = parseFloat(rawIc);
+                                        if (!isNaN(parsedFloat)) {
+                                            icClean = String(Math.round(parsedFloat)).replace(/\D/g, '');
+                                        }
+                                    }
+
+                                    if (icClean.length === 11) {
+                                        icClean = '0' + icClean;
+                                    }
+
+                                    const tagging = findVal(row, ['tagging', 'tag', 'giliran', 'barcode', 'panggilan', 'no_tag']) || `TAG-${idx + 1}`;
+                                    const name = findVal(row, ['nama', 'name', 'graduan', 'pelajar', 'student']) || `Graduan ${idx + 1}`;
+                                    const matrix = findVal(row, ['matrik', 'matrix', 'idpelajar', 'studentid', 'no_matrik']) || '-';
+                                    const session = findVal(row, ['sidang', 'sesi', 'session', 'sidangmajlis', 'kod_sidang']) || 'Sidang 1';
+                                    const seat = findVal(row, ['kerusi', 'seat', 'zon', 'tempatduduk']) || `ZON-A-${String(idx + 1).padStart(2, '0')}`;
+                                    const faculty = findVal(row, ['fakulti', 'faculty', 'kolej', 'pusat']) || 'Fakulti Umum';
+                                    const program = findVal(row, ['program', 'kursus', 'course', 'jurusan']) || 'Ijazah Sarjana Muda';
+                                    const award = findVal(row, ['anugerah', 'award', 'pingat', 'kategori']) || '-';
+
+                                    const rawStatusStr = findVal(row, ['status', 'kehadiran', 'daftar', 'hadir']).trim().toLowerCase();
+                                    const isNegative = !rawStatusStr || 
+                                                       rawStatusStr.includes('belum') || 
+                                                       rawStatusStr.includes('tidak') || 
+                                                       rawStatusStr.includes('tak') || 
+                                                       rawStatusStr.includes('batal') || 
+                                                       rawStatusStr.includes('absent') || 
+                                                       rawStatusStr.includes('false') || 
+                                                       rawStatusStr.includes('no') ||
+                                                       rawStatusStr === '0' ||
+                                                       rawStatusStr === '-';
+
+                                    const isRegistered = !isNegative && (
+                                        rawStatusStr === 'daftar' || 
+                                        rawStatusStr === 'hadir' || 
+                                        rawStatusStr === 'yes' || 
+                                        rawStatusStr === 'true' || 
+                                        rawStatusStr === '1' ||
+                                        rawStatusStr === 'telah daftar'
+                                    );
+
+                                    return {
+                                        id: idx + 1,
+                                        tagging,
+                                        ic: icClean || String(100000000000 + idx),
+                                        name,
+                                        matrixNumber: matrix,
+                                        program,
+                                        faculty,
+                                        session,
+                                        seatNumber: seat,
+                                        award,
+                                        status: isRegistered ? 'Daftar' : 'Belum Daftar',
+                                        registeredTime: isRegistered ? (findVal(row, ['waktu', 'time']) || currentTimeString.value) : ''
+                                    };
+                                });
+
+                                studentList.value = mapped;
+                                isCustomDataLoaded.value = true;
+                                selectedSession.value = 'all';
+                                saveToLocalStorage();
+                                showToast(`Berjaya memuat naik ${mapped.length} rekod graduan! Data disimpan secara kekal.`, 'success');
+                                renderCharts();
+                            } catch (err) {
+                                console.error(err);
+                                showToast('Ralat memproses fail Excel. Sila pastikan format fail betul.', 'error');
+                            }
+                        };
+                        reader.readAsArrayBuffer(file);
+                    };
+
+                    const handleFileUpload = (e) => {
+                        const file = e.target.files[0];
+                        if (file) processExcelFile(file);
+                    };
+
+                    const handleFileDrop = (e) => {
+                        const file = e.dataTransfer.files[0];
+                        if (file) processExcelFile(file);
+                    };
+
+                    // Download Clean Official Excel Template
+                    const downloadTemplate = () => {
+                        const templateData = [
+                            {
+                                'Nombor_Tagging': 'TAG-S1-001',
+                                'No_Kad_Pengenalan': '010514105432',
+                                'Nama_Graduan': 'MUHAMMAD AMIR BIN ABDULLAH',
+                                'No_Matrik': 'B032010001',
+                                'SIDANG': 'Sidang 1',
+                                'No_Kerusi': 'ZON-A-01',
+                                'Fakulti': 'Fakulti Komputeran & Informatik',
+                                'Program': 'Sarjana Muda Sains Komputer (Kepujian)',
+                                'Anugerah': 'Anugerah Pelajaran Diraja',
+                                'Status_Kehadiran': 'Belum Daftar'
+                            },
+                            {
+                                'Nombor_Tagging': 'TAG-S1-002',
+                                'No_Kad_Pengenalan': '010822145890',
+                                'Nama_Graduan': 'NURUL AISYAH BINTI ISMAIL',
+                                'No_Matrik': 'B032010002',
+                                'SIDANG': 'Sidang 1',
+                                'No_Kerusi': 'ZON-A-02',
+                                'Fakulti': 'Fakulti Komputeran & Informatik',
+                                'Program': 'Sarjana Muda Kejuruteraan Perisian',
+                                'Anugerah': '-',
+                                'Status_Kehadiran': 'Belum Daftar'
+                            },
+                            {
+                                'Nombor_Tagging': 'TAG-S2-001',
+                                'No_Kad_Pengenalan': '011105075678',
+                                'Nama_Graduan': 'CHONG WEI JIE',
+                                'No_Matrik': 'B022010045',
+                                'SIDANG': 'Sidang 2',
+                                'No_Kerusi': 'ZON-B-01',
+                                'Fakulti': 'Fakulti Pengurusan & Perniagaan',
+                                'Program': 'Sarjana Muda Perakaunan (Kepujian)',
+                                'Anugerah': 'Hadiah Buku Fakulti',
+                                'Status_Kehadiran': 'Belum Daftar'
+                            }
+                        ];
+
+                        const ws = XLSX.utils.json_to_sheet(templateData);
+                        const wb = XLSX.utils.book_new();
+                        XLSX.utils.book_append_sheet(wb, ws, 'Senarai_Graduan');
+                        XLSX.writeFile(wb, 'Templat_Graduan_Konvokesyen.xlsx');
+                        showToast('Templat Excel berjaya dimuat turun!');
+                    };
+
+                    // Export Attendance Excel
+                    const exportAttendanceExcel = () => {
+                        const exportData = studentList.value.map((s, idx) => ({
+                            'Bil': idx + 1,
+                            'Nombor Tagging': s.tagging,
+                            'No Kad Pengenalan': s.ic,
+                            'Nama Graduan': s.name,
+                            'No Matrik': s.matrixNumber,
+                            'SIDANG': s.session,
+                            'No Kerusi': s.seatNumber,
+                            'Fakulti': s.faculty,
+                            'Program': s.program,
+                            'Anugerah': s.award,
+                            'Status Kehadiran': s.status,
+                            'Waktu Pendaftaran': s.registeredTime || '-'
+                        }));
+
+                        const ws = XLSX.utils.json_to_sheet(exportData);
+                        const wb = XLSX.utils.book_new();
+                        XLSX.utils.book_append_sheet(wb, ws, 'Laporan_Kehadiran_Konvo');
+                        XLSX.writeFile(wb, `Laporan_Kehadiran_Konvo_${new Date().toISOString().slice(0, 10)}.xlsx`);
+                        showToast('Laporan Kehadiran (.xlsx) berjaya dieksport!');
+                    };
+
+                    // Label paparan sahaja: nama sidang berbentuk nombor (cth. "13") dipaparkan sebagai "Sidang 13"
+                    const sessionLabel = (name) => {
+                        const str = String(name ?? '').trim();
+                        return /^\d+$/.test(str) ? `Sidang ${str}` : str;
+                    };
+
+                    // Label paparan ringkas untuk kad sidang: "Sidang 1 (Pagi)" -> "1" (Pagi/Petang dipapar berasingan)
+                    const sessionShortName = (name) => {
+                        const str = String(name ?? '').trim();
+                        const short = str.replace(/^sidang\s*/i, '').replace(/\s*\((pagi|petang)\)\s*$/i, '').trim();
+                        return short || str;
+                    };
+
+                    // Label paparan sahaja: "DIPLOMA AGROINDUSTRI TANAMAN" -> "Diploma Agroindustri Tanaman"
+                    const titleCase = (text) => String(text ?? '')
+                        .toLowerCase()
+                        .replace(/(^|[\s(\/&-])(\p{L})/gu, (m, sep, ch) => sep + ch.toUpperCase());
+
+                    const isImportantColumn = (col) => {
+                        const c = col.toLowerCase();
+                        return c.includes('tag') || c.includes('ic') || c.includes('nama') || c.includes('kerusi') || c.includes('status') || c.includes('sidang');
+                    };
+
+                    // Navigation & Auth Logic
+                    const switchTab = (tabName) => {
+                        // 1. Jika pengguna Awam (public), batasi hanya boleh di tab 'dashboard'
+                        if (userRole.value === 'public' && tabName !== 'dashboard') {
+                            openAuthModal();
+                            return;
+                        }
+
+                        // 2. Proteksi Logika: Jika Urusetia Biasa mencoba buka tab 'excel', alihkan & kunci
+                        if (tabName === 'excel' && userRole.value !== 'admin') {
+                            alert('Akses Ditolak! Modul ini khusus untuk Pentadbir Utama (Admin).');
+                            return;
+                        }
+
+                        // 3. Set tab aktif
+                        activeTab.value = tabName;
+
+                        // 4. Render ulang grafik jika kembali ke dashboard
+                        if (tabName === 'dashboard') {
+                            renderCharts();
+                        }
+
+                        // 5. Re-render ikon Lucide jika masih digunakan
+                        nextTick(() => {
+                            if (window.lucide) window.lucide.createIcons();
+                        });
+                    };
+
+                    const openAuthModal = () => {
+                        inputPin.value = '';
+                        pinError.value = '';
+                        showAuthModal.value = true;
+                        nextTick(() => {
+                            if (pinInputRef.value) pinInputRef.value.focus();
+                        });
+                    };
+
+                    const closeAuthModal = () => {
+                        showAuthModal.value = false;
+                        inputPin.value = '';
+                        pinError.value = '';
+                    };
+
+                    const verifyPin = () => {
+                        const cleanPin = String(inputPin.value).trim();
+
+                        if (cleanPin === ADMIN_PIN) {
+                            userRole.value = 'admin';
+                            showAuthModal.value = false;
+                            inputPin.value = '';
+                            showToast('Akses Admin Disahkan. Selamat Bertugas!', 'success');
+                            activeTab.value = 'excel';
+                            nextTick(() => {
+                                if (window.lucide) window.lucide.createIcons();
+                            });
+                        } else if (cleanPin === URUSETIA_PIN) {
+                            userRole.value = 'urusetia';
+                            showAuthModal.value = false;
+                            inputPin.value = '';
+                            showToast('Akses Urusetia Disahkan. Selamat Bertugas!', 'success');
+                            activeTab.value = 'kiosk';
+                            nextTick(() => {
+                                if (window.lucide) window.lucide.createIcons();
+                            });
+                        } else {
+                            pinError.value = 'PIN salah. Sila cuba lagi.';
+                        }
+                    };
+
+                    const logoutUrusetia = () => {
+                        userRole.value = 'public';
+                        activeTab.value = 'dashboard';
+                        showToast('Sistem dikunci semula kepada Mod Paparan Awam.');
+                        renderCharts();
+                    };
+
+                    onMounted(() => {
+                        try {
+                            const savedTheme = localStorage.getItem('ekonvo_dark_mode');
+                            if (savedTheme !== null) {
+                                isDarkMode.value = (savedTheme === 'true');
+                            }
+                        } catch (e) {}
+
+                        const urlParams = new URLSearchParams(window.location.search);
+                        if (urlParams.get('admin') === 'true') {
+                            userRole.value = 'urusetia';
+                        }
+                        if (isDarkMode.value) {
+                            document.documentElement.classList.add('dark');
+                        } else {
+                            document.documentElement.classList.remove('dark');
+                        }
+                        // Tekan Escape untuk tutup popup kad laporan sidang
+                        window.addEventListener('keydown', (e) => {
+                            if (e.key === 'Escape' && reportSession.value) closeSessionReport();
+                        });
+
+                        renderCharts();
+                    });
+
+                    return {
+                        isDarkMode,
+                        toggleDarkMode,
+                        userRole,
+                        adminPin,
+                        showAuthModal,
+                        inputPin,
+                        pinError,
+                        pinInputRef,
+                        switchTab,
+                        openAuthModal,
+                        closeAuthModal,
+                        verifyPin,
+                        logoutUrusetia,
+                        activeTab,
+                        inputIC,
+                        cleanInputIC,
+                        searchQuery,
+                        filterSession,
+                        filterStatus,
+                        selectedSession,
+                        sessions,
+                        sessionStats,
+                        dashboardFilteredStudents,
+                        dashboardStats,
+                        specialAwardStats,
+                        resetSessionSelection,
+                        selectSessionCard,
+                        sessionReport,
+                        openSessionReport,
+                        closeSessionReport,
+                        filterDashboardBySession,
+                        pdfExporting,
+                        reportPanelRef,
+                        imageCopying,
+                        copySessionImage,
+                        exportSessionPdf,
+                        currentPage,
+                        pageSize,
+                        totalPages,
+                        paginatedStart,
+                        paginatedEnd,
+                        paginatedStudentList,
+                        loadedFileName,
+                        rawExcelColumns,
+                        rawExcelData,
+                        isImportantColumn,
+                        sessionLabel,
+                        sessionShortName,
+                        titleCase,
+                        formatPct,
+                        isCustomDataLoaded,
+                        resetToDefaultSampleData,
+                        currentTimeOnly,
+                        currentDateString,
+                        currentTimeString,
+                        studentList,
+                        clearICInput,
+                        matchedStudent,
+                        selectDemoStudent,
+                        handleRecordAttendance,
+                        markStudentAttendance,
+                        setSingleStatus,
+                        markAllStudents,
+                        resetAllAttendance,
+                        filteredStudentList,
+                        registeredCount,
+                        unregisteredCount,
+                        handleFileUpload,
+                        handleFileDrop,
+                        downloadTemplate,
+                        exportAttendanceExcel,
+                        toast
+                    };
+                }
+            }).mount('#app');
+        })();
+    </script>
+</body>
+</html>
